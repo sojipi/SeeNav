@@ -1,4 +1,4 @@
-<template>
+<page>
   <view class="page">
     <view class="card">
       <view class="topbar">
@@ -101,109 +101,10 @@
       />
     </view>
   </view>
-</template>
+</page>
 
-<script>
+<script setup>
 import wx from "wx";
-
-const ROUTE_STEPS = [
-  { id: "1", label: "定位" },
-  { id: "2", label: "直行" },
-  { id: "3", label: "右转" },
-  { id: "4", label: "到达" }
-];
-
-const DEMO_FRAMES = [
-  {
-    routeState: "已定位",
-    routeClass: "route-state route-ok",
-    frameMeta: "实景帧 01 · B1 停车场",
-    currentPlace: "B1 C区电梯口外侧",
-    orientation: "面向 C12-C16 柱号方向",
-    landmarks: ["C区标牌", "电梯厅", "柱号 C12", "出口箭头"],
-    nextAction: "沿当前方向直行，看到 C16 柱后准备右转。",
-    confidence: 82,
-    progress: 25,
-    activeStep: 2,
-    scanButtonText: "继续校准"
-  },
-  {
-    routeState: "方向正确",
-    routeClass: "route-state route-ok",
-    frameMeta: "实景帧 02 · C16 柱前",
-    currentPlace: "C16 柱前主通道",
-    orientation: "面对 C18 支路入口",
-    landmarks: ["柱号 C16", "C18箭头", "白色车道线", "限速牌"],
-    nextAction: "在 C16 柱后右转，进入右侧车位排。",
-    confidence: 88,
-    progress: 55,
-    activeStep: 3,
-    scanButtonText: "右转后校准"
-  },
-  {
-    routeState: "接近目标",
-    routeClass: "route-state route-warn",
-    frameMeta: "实景帧 03 · C18 车位排",
-    currentPlace: "C18 车位排前方",
-    orientation: "目标在右前方第二个车位",
-    landmarks: ["C18标线", "消防栓", "灰色SUV", "柱号 C18"],
-    nextAction: "继续前进 8 到 12 米，C18 在右侧第二个车位。",
-    confidence: 91,
-    progress: 82,
-    activeStep: 4,
-    scanButtonText: "确认到达"
-  },
-  {
-    routeState: "已到达",
-    routeClass: "route-state route-done",
-    frameMeta: "实景帧 04 · 目标车位",
-    currentPlace: "B1 C区 C18",
-    orientation: "目的地位于右侧",
-    landmarks: ["车位 C18", "目标车辆", "柱号 C18", "C区标牌"],
-    nextAction: "已到达目的地，停止导航。",
-    confidence: 96,
-    progress: 100,
-    activeStep: 4,
-    scanButtonText: "重新校准"
-  }
-];
-
-const DEVIATION_FRAME = {
-  routeState: "偏离路线",
-  routeClass: "route-state route-off",
-  frameMeta: "偏航帧 · D区入口",
-  currentPlace: "B1 D区通道口",
-  orientation: "背离 C18 方向",
-  landmarks: ["D区标牌", "出口箭头", "柱号 D03", "收费处"],
-  nextAction: "你已走到 D区，请向左回到 C区标牌，再寻找 C16 柱。",
-  confidence: 74,
-  progress: 42,
-  activeStep: 2,
-  scanButtonText: "重新定位"
-};
-
-function toLandmarks(labels) {
-  return labels.map((label, index) => ({
-    id: `${index}-${label}`,
-    label
-  }));
-}
-
-function toSteps(activeStep) {
-  return ROUTE_STEPS.map((step) => ({
-    ...step,
-    className: Number(step.id) <= activeStep ? "step step-active" : "step"
-  }));
-}
-
-function pickTranscript(event) {
-  const results = event && event.results;
-  const firstResult = results && results[0];
-  const firstAlternative = firstResult && firstResult[0];
-  return firstAlternative && firstAlternative.transcript
-    ? firstAlternative.transcript
-    : "";
-}
 
 export default {
   data: {
@@ -213,11 +114,21 @@ export default {
     frameMeta: "等待眼镜画面",
     currentPlace: "未知位置",
     orientation: "等待拍照判断朝向",
-    landmarks: toLandmarks(["停车场地图", "车位号", "柱号", "店铺招牌"]),
+    landmarks: [
+      { id: "0-停车场地图", label: "停车场地图" },
+      { id: "1-车位号", label: "车位号" },
+      { id: "2-柱号", label: "柱号" },
+      { id: "3-店铺招牌", label: "店铺招牌" }
+    ],
     nextAction: "先拍摄眼前环境，系统会用地标判断你在哪里。",
     confidence: 0,
     progress: 0,
-    steps: toSteps(0),
+    steps: [
+      { id: "1", label: "定位", className: "step" },
+      { id: "2", label: "直行", className: "step" },
+      { id: "3", label: "右转", className: "step" },
+      { id: "4", label: "到达", className: "step" }
+    ],
     scanButtonText: "拍照定位",
     voiceLabel: "语音",
     errorText: "",
@@ -253,7 +164,7 @@ export default {
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event) => {
-        const transcript = pickTranscript(event).trim();
+        const transcript = this.pickTranscript(event).trim();
         this.setData({
           destination: transcript || this.data.destination,
           voiceLabel: "语音",
@@ -336,14 +247,14 @@ export default {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 520));
-    const index = this.data.frameIndex % DEMO_FRAMES.length;
-    return DEMO_FRAMES[index];
+    const index = this.data.frameIndex % 4;
+    return this.getDemoFrame(index);
   },
 
   requestBackend(photoMeta) {
     return new Promise((resolve, reject) => {
       wx.request({
-        url: `${this.data.apiBase}/api/visual-nav/locate`,
+        url: this.data.apiBase + "/api/visual-nav/locate",
         method: "POST",
         dataType: "json",
         data: {
@@ -365,20 +276,20 @@ export default {
 
   applyNavigationFrame(frame, photoMeta) {
     const metaPrefix = photoMeta
-      ? `实拍 · ${Math.round(photoMeta.size / 1024)}KB`
+      ? "实拍 · " + Math.round(photoMeta.size / 1024) + "KB"
       : frame.frameMeta;
 
     this.setData({
       routeState: frame.routeState,
       routeClass: frame.routeClass,
-      frameMeta: photoMeta ? `${metaPrefix} · ${photoMeta.mimeType}` : frame.frameMeta,
+      frameMeta: photoMeta ? metaPrefix + " · " + photoMeta.mimeType : frame.frameMeta,
       currentPlace: frame.currentPlace,
       orientation: frame.orientation,
-      landmarks: toLandmarks(frame.landmarks),
+      landmarks: this.toLandmarks(frame.landmarks),
       nextAction: frame.nextAction,
       confidence: frame.confidence,
       progress: frame.progress,
-      steps: toSteps(frame.activeStep),
+      steps: this.toSteps(frame.activeStep),
       scanButtonText: frame.scanButtonText,
       frameIndex: this.data.frameIndex + 1,
       isScanning: false
@@ -388,7 +299,7 @@ export default {
   },
 
   onDeviationTap() {
-    this.applyNavigationFrame(DEVIATION_FRAME, null);
+    this.applyNavigationFrame(this.getDeviationFrame(), null);
   },
 
   onResetTap() {
@@ -398,16 +309,128 @@ export default {
       frameMeta: "等待眼镜画面",
       currentPlace: "未知位置",
       orientation: "等待拍照判断朝向",
-      landmarks: toLandmarks(["停车场地图", "车位号", "柱号", "店铺招牌"]),
+      landmarks: this.toLandmarks(["停车场地图", "车位号", "柱号", "店铺招牌"]),
       nextAction: "先拍摄眼前环境，系统会用地标判断你在哪里。",
       confidence: 0,
       progress: 0,
-      steps: toSteps(0),
+      steps: this.toSteps(0),
       scanButtonText: "拍照定位",
       frameIndex: 0,
       isScanning: false,
       errorText: ""
     });
+  },
+
+  pickTranscript(event) {
+    const results = event && event.results;
+    const firstResult = results && results[0];
+    const firstAlternative = firstResult && firstResult[0];
+    return firstAlternative && firstAlternative.transcript
+      ? firstAlternative.transcript
+      : "";
+  },
+
+  toLandmarks(labels) {
+    const landmarks = [];
+    for (let i = 0; i < labels.length; i += 1) {
+      landmarks.push({
+        id: String(i) + "-" + labels[i],
+        label: labels[i]
+      });
+    }
+    return landmarks;
+  },
+
+  toSteps(activeStep) {
+    const steps = [
+      { id: "1", label: "定位" },
+      { id: "2", label: "直行" },
+      { id: "3", label: "右转" },
+      { id: "4", label: "到达" }
+    ];
+    const result = [];
+    for (let i = 0; i < steps.length; i += 1) {
+      result.push({
+        id: steps[i].id,
+        label: steps[i].label,
+        className: Number(steps[i].id) <= activeStep ? "step step-active" : "step"
+      });
+    }
+    return result;
+  },
+
+  getDemoFrame(index) {
+    const frames = [
+      {
+        routeState: "已定位",
+        routeClass: "route-state route-ok",
+        frameMeta: "实景帧 01 · B1 停车场",
+        currentPlace: "B1 C区电梯口外侧",
+        orientation: "面向 C12-C16 柱号方向",
+        landmarks: ["C区标牌", "电梯厅", "柱号 C12", "出口箭头"],
+        nextAction: "沿当前方向直行，看到 C16 柱后准备右转。",
+        confidence: 82,
+        progress: 25,
+        activeStep: 2,
+        scanButtonText: "继续校准"
+      },
+      {
+        routeState: "方向正确",
+        routeClass: "route-state route-ok",
+        frameMeta: "实景帧 02 · C16 柱前",
+        currentPlace: "C16 柱前主通道",
+        orientation: "面对 C18 支路入口",
+        landmarks: ["柱号 C16", "C18箭头", "白色车道线", "限速牌"],
+        nextAction: "在 C16 柱后右转，进入右侧车位排。",
+        confidence: 88,
+        progress: 55,
+        activeStep: 3,
+        scanButtonText: "右转后校准"
+      },
+      {
+        routeState: "接近目标",
+        routeClass: "route-state route-warn",
+        frameMeta: "实景帧 03 · C18 车位排",
+        currentPlace: "C18 车位排前方",
+        orientation: "目标在右前方第二个车位",
+        landmarks: ["C18标线", "消防栓", "灰色SUV", "柱号 C18"],
+        nextAction: "继续前进 8 到 12 米，C18 在右侧第二个车位。",
+        confidence: 91,
+        progress: 82,
+        activeStep: 4,
+        scanButtonText: "确认到达"
+      },
+      {
+        routeState: "已到达",
+        routeClass: "route-state route-done",
+        frameMeta: "实景帧 04 · 目标车位",
+        currentPlace: "B1 C区 C18",
+        orientation: "目的地位于右侧",
+        landmarks: ["车位 C18", "目标车辆", "柱号 C18", "C区标牌"],
+        nextAction: "已到达目的地，停止导航。",
+        confidence: 96,
+        progress: 100,
+        activeStep: 4,
+        scanButtonText: "重新校准"
+      }
+    ];
+    return frames[index];
+  },
+
+  getDeviationFrame() {
+    return {
+      routeState: "偏离路线",
+      routeClass: "route-state route-off",
+      frameMeta: "偏航帧 · D区入口",
+      currentPlace: "B1 D区通道口",
+      orientation: "背离 C18 方向",
+      landmarks: ["D区标牌", "出口箭头", "柱号 D03", "收费处"],
+      nextAction: "你已走到 D区，请向左回到 C区标牌，再寻找 C16 柱。",
+      confidence: 74,
+      progress: 42,
+      activeStep: 2,
+      scanButtonText: "重新定位"
+    };
   },
 
   speak(text) {
