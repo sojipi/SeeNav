@@ -1,0 +1,778 @@
+<template>
+  <view class="page">
+    <view class="card">
+      <view class="topbar">
+        <view class="brand">
+          <text class="eyebrow">SeeNav</text>
+          <text class="title">看见式导航</text>
+        </view>
+        <view class="{{ routeClass }}">
+          <text>{{ routeState }}</text>
+        </view>
+      </view>
+
+      <view class="destination-row">
+        <text class="field-label">目的地</text>
+        <input
+          class="destination-input"
+          value="{{ destination }}"
+          placeholder="B1 C区 C18"
+          maxLength="32"
+          bindinput="onDestinationInput"
+        />
+        <button class="voice-button" bindtap="onVoiceTap">
+          <text>{{ voiceLabel }}</text>
+        </button>
+      </view>
+
+      <view class="vision-panel">
+        <view class="vision-header">
+          <text class="mini-label">眼镜视野</text>
+          <text class="frame-meta">{{ frameMeta }}</text>
+        </view>
+        <view class="vision-box">
+          <view class="reticle">
+            <view class="reticle-line"></view>
+            <view class="reticle-dot"></view>
+          </view>
+          <text class="place">{{ currentPlace }}</text>
+          <text class="orientation">{{ orientation }}</text>
+        </view>
+      </view>
+
+      <view class="landmark-row">
+        <text class="mini-label">识别地标</text>
+        <view class="chips">
+          <view class="chip" ink:for="{{ landmarks }}" ink:key="id">
+            <text>{{ item.label }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="guidance">
+        <text class="mini-label">下一步</text>
+        <text class="action">{{ nextAction }}</text>
+      </view>
+
+      <view class="metrics">
+        <view class="metric">
+          <view class="metric-head">
+            <text>定位置信度</text>
+            <text>{{ confidence }}%</text>
+          </view>
+          <view class="bar">
+            <view class="bar-fill confidence-fill" style="width: {{ confidence }}%;"></view>
+          </view>
+        </view>
+        <view class="metric">
+          <view class="metric-head">
+            <text>路线进度</text>
+            <text>{{ progress }}%</text>
+          </view>
+          <view class="bar">
+            <view class="bar-fill progress-fill" style="width: {{ progress }}%;"></view>
+          </view>
+        </view>
+      </view>
+
+      <view class="trace-row">
+        <view class="{{ item.className }}" ink:for="{{ steps }}" ink:key="id">
+          <text class="step-index">{{ item.id }}</text>
+          <text class="step-label">{{ item.label }}</text>
+        </view>
+      </view>
+
+      <view class="control-row">
+        <button class="scan-button" bindtap="onScanTap">
+          <text>{{ scanButtonText }}</text>
+        </button>
+        <button class="secondary-button" bindtap="onDeviationTap">
+          <text>偏航测试</text>
+        </button>
+        <button class="reset-button" bindtap="onResetTap">
+          <text>重置</text>
+        </button>
+      </view>
+
+      <error-state
+        ink:if="{{ errorText }}"
+        text="{{ errorText }}"
+        class="error"
+      />
+    </view>
+  </view>
+</template>
+
+<script>
+import wx from "wx";
+
+const ROUTE_STEPS = [
+  { id: "1", label: "定位" },
+  { id: "2", label: "直行" },
+  { id: "3", label: "右转" },
+  { id: "4", label: "到达" }
+];
+
+const DEMO_FRAMES = [
+  {
+    routeState: "已定位",
+    routeClass: "route-state route-ok",
+    frameMeta: "实景帧 01 · B1 停车场",
+    currentPlace: "B1 C区电梯口外侧",
+    orientation: "面向 C12-C16 柱号方向",
+    landmarks: ["C区标牌", "电梯厅", "柱号 C12", "出口箭头"],
+    nextAction: "沿当前方向直行，看到 C16 柱后准备右转。",
+    confidence: 82,
+    progress: 25,
+    activeStep: 2,
+    scanButtonText: "继续校准"
+  },
+  {
+    routeState: "方向正确",
+    routeClass: "route-state route-ok",
+    frameMeta: "实景帧 02 · C16 柱前",
+    currentPlace: "C16 柱前主通道",
+    orientation: "面对 C18 支路入口",
+    landmarks: ["柱号 C16", "C18箭头", "白色车道线", "限速牌"],
+    nextAction: "在 C16 柱后右转，进入右侧车位排。",
+    confidence: 88,
+    progress: 55,
+    activeStep: 3,
+    scanButtonText: "右转后校准"
+  },
+  {
+    routeState: "接近目标",
+    routeClass: "route-state route-warn",
+    frameMeta: "实景帧 03 · C18 车位排",
+    currentPlace: "C18 车位排前方",
+    orientation: "目标在右前方第二个车位",
+    landmarks: ["C18标线", "消防栓", "灰色SUV", "柱号 C18"],
+    nextAction: "继续前进 8 到 12 米，C18 在右侧第二个车位。",
+    confidence: 91,
+    progress: 82,
+    activeStep: 4,
+    scanButtonText: "确认到达"
+  },
+  {
+    routeState: "已到达",
+    routeClass: "route-state route-done",
+    frameMeta: "实景帧 04 · 目标车位",
+    currentPlace: "B1 C区 C18",
+    orientation: "目的地位于右侧",
+    landmarks: ["车位 C18", "目标车辆", "柱号 C18", "C区标牌"],
+    nextAction: "已到达目的地，停止导航。",
+    confidence: 96,
+    progress: 100,
+    activeStep: 4,
+    scanButtonText: "重新校准"
+  }
+];
+
+const DEVIATION_FRAME = {
+  routeState: "偏离路线",
+  routeClass: "route-state route-off",
+  frameMeta: "偏航帧 · D区入口",
+  currentPlace: "B1 D区通道口",
+  orientation: "背离 C18 方向",
+  landmarks: ["D区标牌", "出口箭头", "柱号 D03", "收费处"],
+  nextAction: "你已走到 D区，请向左回到 C区标牌，再寻找 C16 柱。",
+  confidence: 74,
+  progress: 42,
+  activeStep: 2,
+  scanButtonText: "重新定位"
+};
+
+function toLandmarks(labels) {
+  return labels.map((label, index) => ({
+    id: `${index}-${label}`,
+    label
+  }));
+}
+
+function toSteps(activeStep) {
+  return ROUTE_STEPS.map((step) => ({
+    ...step,
+    className: Number(step.id) <= activeStep ? "step step-active" : "step"
+  }));
+}
+
+function pickTranscript(event) {
+  const results = event && event.results;
+  const firstResult = results && results[0];
+  const firstAlternative = firstResult && firstResult[0];
+  return firstAlternative && firstAlternative.transcript
+    ? firstAlternative.transcript
+    : "";
+}
+
+export default {
+  data: {
+    destination: "B1 C区 C18",
+    routeState: "待定位",
+    routeClass: "route-state",
+    frameMeta: "等待眼镜画面",
+    currentPlace: "未知位置",
+    orientation: "等待拍照判断朝向",
+    landmarks: toLandmarks(["停车场地图", "车位号", "柱号", "店铺招牌"]),
+    nextAction: "先拍摄眼前环境，系统会用地标判断你在哪里。",
+    confidence: 0,
+    progress: 0,
+    steps: toSteps(0),
+    scanButtonText: "拍照定位",
+    voiceLabel: "语音",
+    errorText: "",
+    frameIndex: 0,
+    isScanning: false,
+    apiBase: ""
+  },
+
+  onLoad(options = {}) {
+    if (options.destination) {
+      this.setData({
+        destination: decodeURIComponent(options.destination)
+      });
+    }
+  },
+
+  onDestinationInput(event) {
+    this.setData({
+      destination: event.detail.value,
+      errorText: ""
+    });
+  },
+
+  onVoiceTap() {
+    if (this.data.voiceLabel === "听取中") {
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "zh-CN";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        const transcript = pickTranscript(event).trim();
+        this.setData({
+          destination: transcript || this.data.destination,
+          voiceLabel: "语音",
+          errorText: ""
+        });
+      };
+
+      recognition.onerror = () => {
+        this.useVoiceFallback();
+      };
+
+      recognition.onend = () => {
+        this.setData({
+          voiceLabel: "语音"
+        });
+      };
+
+      this.setData({
+        voiceLabel: "听取中",
+        errorText: ""
+      });
+      recognition.start();
+    } catch (error) {
+      this.useVoiceFallback();
+    }
+  },
+
+  useVoiceFallback() {
+    this.setData({
+      destination: "B1 C区 C18",
+      voiceLabel: "语音",
+      errorText: "语音能力不可用，已切换为比赛演示目的地。"
+    });
+  },
+
+  async onScanTap() {
+    if (this.data.isScanning) {
+      return;
+    }
+
+    this.setData({
+      isScanning: true,
+      scanButtonText: "分析中",
+      errorText: ""
+    });
+
+    const photoMeta = await this.capturePhotoMeta();
+    const result = await this.resolveNavigation(photoMeta);
+
+    this.applyNavigationFrame(result, photoMeta);
+  },
+
+  async capturePhotoMeta() {
+    try {
+      const camera = wx.media.createCameraContext();
+      if (!camera) {
+        return null;
+      }
+
+      const photo = await camera.takePhoto({ quality: "high" });
+      const size = photo && photo.data ? photo.data.byteLength : 0;
+      return {
+        mimeType: photo && photo.mimeType ? photo.mimeType : "image/jpeg",
+        size
+      };
+    } catch (error) {
+      return null;
+    }
+  },
+
+  async resolveNavigation(photoMeta) {
+    if (this.data.apiBase) {
+      try {
+        return await this.requestBackend(photoMeta);
+      } catch (error) {
+        this.setData({
+          errorText: "后端暂不可用，已切换为本地演示推理。"
+        });
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 520));
+    const index = this.data.frameIndex % DEMO_FRAMES.length;
+    return DEMO_FRAMES[index];
+  },
+
+  requestBackend(photoMeta) {
+    return new Promise((resolve, reject) => {
+      wx.request({
+        url: `${this.data.apiBase}/api/visual-nav/locate`,
+        method: "POST",
+        dataType: "json",
+        data: {
+          destination: this.data.destination,
+          photoMeta,
+          scenario: "parking"
+        },
+        success: (response) => {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            resolve(response.data);
+          } else {
+            reject(new Error("Unexpected backend status"));
+          }
+        },
+        fail: reject
+      });
+    });
+  },
+
+  applyNavigationFrame(frame, photoMeta) {
+    const metaPrefix = photoMeta
+      ? `实拍 · ${Math.round(photoMeta.size / 1024)}KB`
+      : frame.frameMeta;
+
+    this.setData({
+      routeState: frame.routeState,
+      routeClass: frame.routeClass,
+      frameMeta: photoMeta ? `${metaPrefix} · ${photoMeta.mimeType}` : frame.frameMeta,
+      currentPlace: frame.currentPlace,
+      orientation: frame.orientation,
+      landmarks: toLandmarks(frame.landmarks),
+      nextAction: frame.nextAction,
+      confidence: frame.confidence,
+      progress: frame.progress,
+      steps: toSteps(frame.activeStep),
+      scanButtonText: frame.scanButtonText,
+      frameIndex: this.data.frameIndex + 1,
+      isScanning: false
+    });
+
+    this.speak(frame.nextAction);
+  },
+
+  onDeviationTap() {
+    this.applyNavigationFrame(DEVIATION_FRAME, null);
+  },
+
+  onResetTap() {
+    this.setData({
+      routeState: "待定位",
+      routeClass: "route-state",
+      frameMeta: "等待眼镜画面",
+      currentPlace: "未知位置",
+      orientation: "等待拍照判断朝向",
+      landmarks: toLandmarks(["停车场地图", "车位号", "柱号", "店铺招牌"]),
+      nextAction: "先拍摄眼前环境，系统会用地标判断你在哪里。",
+      confidence: 0,
+      progress: 0,
+      steps: toSteps(0),
+      scanButtonText: "拍照定位",
+      frameIndex: 0,
+      isScanning: false,
+      errorText: ""
+    });
+  },
+
+  speak(text) {
+    try {
+      if (wx.speech && wx.speech.playTTS) {
+        wx.speech.playTTS(text);
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "zh-CN";
+      utterance.rate = 1;
+      speechSynthesis.speak(utterance);
+    } catch (error) {
+      console.log("TTS unavailable", error);
+    }
+  }
+};
+</script>
+
+<style>
+.page {
+  width: 480px;
+  min-height: 380px;
+  padding: 8px;
+  box-sizing: border-box;
+  background-color: #000000;
+  color: var(--color-text-primary);
+}
+
+.card {
+  height: 364px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: var(--border-width-default) solid var(--border-color-default);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.topbar,
+.destination-row,
+.vision-header,
+.metric-head,
+.control-row {
+  display: flex;
+  align-items: center;
+}
+
+.topbar {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eyebrow,
+.mini-label,
+.field-label {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.title {
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.route-state {
+  min-width: 78px;
+  padding: 7px 10px;
+  box-sizing: border-box;
+  border: var(--border-width-default) solid var(--border-color-muted);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  background-color: var(--color-background);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.route-ok {
+  border-color: var(--border-color-success);
+  color: var(--color-primary);
+  background-color: var(--color-primary-40);
+}
+
+.route-warn {
+  border-color: var(--border-color-warning);
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-highlight);
+}
+
+.route-off {
+  border-color: var(--border-color-danger);
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-highlight);
+}
+
+.route-done {
+  border-color: var(--border-color-success);
+  color: var(--color-background);
+  background-color: var(--color-primary);
+}
+
+.destination-row {
+  gap: 8px;
+}
+
+.field-label {
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.destination-input {
+  flex-grow: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: var(--input-border-width) solid var(--input-border-color);
+  border-radius: var(--input-radius);
+  background-color: var(--input-background-color);
+  color: var(--color-text-primary);
+  font-size: 14px;
+}
+
+.voice-button,
+.scan-button,
+.secondary-button,
+.reset-button {
+  border: var(--border-width-default) solid var(--border-color-accent);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.voice-button {
+  width: 58px;
+  height: 34px;
+  color: var(--color-primary);
+  background-color: var(--color-background);
+}
+
+.vision-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.vision-header {
+  justify-content: space-between;
+}
+
+.frame-meta {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.vision-box {
+  position: relative;
+  height: 78px;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: var(--border-width-default) solid var(--border-color-muted);
+  border-radius: var(--radius-md);
+  background-color: var(--color-background);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+}
+
+.reticle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.4;
+}
+
+.reticle-line {
+  width: 88%;
+  height: 2px;
+  background-color: var(--color-primary-60);
+}
+
+.reticle-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: var(--border-width-default) solid var(--color-primary);
+  border-radius: 10px;
+  background-color: var(--color-background);
+}
+
+.place {
+  position: relative;
+  color: var(--color-text-primary);
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.orientation {
+  position: relative;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.landmark-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.chips {
+  flex-grow: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  padding: 4px 7px;
+  border: var(--border-width-thin) solid var(--border-color-muted);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.guidance {
+  min-height: 48px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  border: var(--border-width-default) solid var(--border-color-accent);
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary-40);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action {
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.metric-head {
+  justify-content: space-between;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.bar {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 7px;
+  background-color: var(--color-background);
+}
+
+.bar-fill {
+  height: 7px;
+  border-radius: 7px;
+}
+
+.confidence-fill {
+  background-color: var(--color-primary);
+}
+
+.progress-fill {
+  background-color: var(--color-secondary);
+}
+
+.trace-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.step {
+  height: 28px;
+  padding: 4px 5px;
+  box-sizing: border-box;
+  border: var(--border-width-thin) solid var(--border-color-muted);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  background-color: var(--color-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.step-active {
+  border-color: var(--border-color-accent);
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-highlight);
+}
+
+.step-index {
+  font-weight: 800;
+}
+
+.step-label {
+  font-weight: 700;
+}
+
+.control-row {
+  gap: 8px;
+}
+
+.scan-button {
+  flex-grow: 1;
+  height: 36px;
+  color: var(--color-background);
+  background-color: var(--color-primary);
+}
+
+.secondary-button {
+  width: 86px;
+  height: 36px;
+  color: var(--color-primary);
+  background-color: var(--color-background);
+}
+
+.reset-button {
+  width: 58px;
+  height: 36px;
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
+  border-color: var(--border-color-muted);
+}
+
+.error {
+  margin-top: 0;
+}
+</style>

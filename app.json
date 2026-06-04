@@ -1,0 +1,11 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "看见式导航",
+    "viewport": {
+      "width": "device-width"
+    }
+  }
+}
