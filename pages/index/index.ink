@@ -13,24 +13,26 @@
 
       <view class="destination-row">
         <text class="field-label">目的地</text>
-        <input
-          class="destination-input"
-          value="{{ destination }}"
-          placeholder="B1 C区 C18"
-          maxLength="32"
-          bindinput="onDestinationInput"
-        />
-        <button class="voice-button" bindtap="onVoiceTap">
+        <view class="destination-value">
+          <text>{{ destination }}</text>
+        </view>
+        <view class="{{ listenClass }}">
           <text>{{ voiceLabel }}</text>
-        </button>
+        </view>
       </view>
 
       <view class="vision-panel">
         <view class="vision-header">
           <text class="mini-label">眼镜视野</text>
-          <text class="frame-meta">{{ frameMeta }}</text>
+          <text class="frame-meta">{{ modelStatus }} · {{ frameMeta }}</text>
         </view>
         <view class="vision-box">
+          <image
+            ink:if="{{ hasCameraFrame }}"
+            class="camera-frame"
+            src="{{ cameraImageSrc }}"
+            mode="scaleToFill"
+          ></image>
           <view class="reticle">
             <view class="reticle-line"></view>
             <view class="reticle-dot"></view>
@@ -82,16 +84,9 @@
         </view>
       </view>
 
-      <view class="control-row">
-        <button class="scan-button" bindtap="onScanTap">
-          <text>{{ scanButtonText }}</text>
-        </button>
-        <button class="secondary-button" bindtap="onDeviationTap">
-          <text>偏航测试</text>
-        </button>
-        <button class="reset-button" bindtap="onResetTap">
-          <text>重置</text>
-        </button>
+      <view class="voice-panel">
+        <text class="voice-command">{{ voiceCommand }}</text>
+        <text class="voice-hint">{{ voiceHint }}</text>
       </view>
 
       <error-state
@@ -130,10 +125,19 @@ export default {
       { id: "4", label: "到达", className: "step" }
     ],
     scanButtonText: "拍照定位",
-    voiceLabel: "语音",
+    voiceLabel: "待唤醒",
+    listenClass: "listen-state",
+    voiceCommand: "等待语音命令",
+    voiceHint: "说 leqi 后接：带我去 C18、拍照定位、继续校准、重置",
     errorText: "",
     frameIndex: 0,
     isScanning: false,
+    isListening: false,
+    lastWakeWord: "",
+    lastVoiceText: "",
+    hasCameraFrame: false,
+    cameraImageSrc: "",
+    modelStatus: "本地演示",
     apiBase: ""
   },
 
@@ -143,6 +147,13 @@ export default {
         destination: decodeURIComponent(options.destination)
       });
     }
+    if (options.apiBase) {
+      this.setData({
+        apiBase: decodeURIComponent(options.apiBase),
+        modelStatus: "后端模型"
+      });
+    }
+    this.checkLanguageModel();
   },
 
   onDestinationInput(event) {
@@ -153,11 +164,77 @@ export default {
   },
 
   onVoiceTap() {
-    if (this.data.voiceLabel === "听取中") {
+    this.startAsr("tap", "");
+  },
+
+  onVoiceWakeup(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onVoiceWakeUp(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onVoiceWake(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onWake(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onWakeup(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onWakeUp(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onWakeWord(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onSpeechWakeup(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onSpeechWakeUp(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onASRWakeup(event) {
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  onVoiceCommand(event) {
+    const text = this.getVoiceText(event);
+    if (text) {
+      this.handleVoiceCommand(text);
+      return;
+    }
+    this.startAsr("wake", this.getWakeWord(event));
+  },
+
+  startAsr(source, wakeWord) {
+    if (this.data.isListening) {
       return;
     }
 
+    this.setData({
+      isListening: true,
+      voiceLabel: "听取中",
+      listenClass: "listen-state listen-active",
+      lastWakeWord: wakeWord || this.data.lastWakeWord,
+      voiceCommand: wakeWord ? "唤醒词：" + wakeWord : "正在听取",
+      errorText: source === "wake" ? "已听到唤醒词，正在听目的地。" : ""
+    });
+
     try {
+      if (source === "wake" && wx.speech && wx.speech.startRecognition) {
+        wx.speech.startRecognition();
+      }
+
       const recognition = new SpeechRecognition();
       recognition.lang = "zh-CN";
       recognition.interimResults = false;
@@ -165,11 +242,7 @@ export default {
 
       recognition.onresult = (event) => {
         const transcript = this.pickTranscript(event).trim();
-        this.setData({
-          destination: transcript || this.data.destination,
-          voiceLabel: "语音",
-          errorText: ""
-        });
+        this.handleVoiceCommand(transcript);
       };
 
       recognition.onerror = () => {
@@ -178,14 +251,12 @@ export default {
 
       recognition.onend = () => {
         this.setData({
-          voiceLabel: "语音"
+          voiceLabel: "待唤醒",
+          listenClass: "listen-state",
+          isListening: false
         });
       };
 
-      this.setData({
-        voiceLabel: "听取中",
-        errorText: ""
-      });
       recognition.start();
     } catch (error) {
       this.useVoiceFallback();
@@ -195,7 +266,9 @@ export default {
   useVoiceFallback() {
     this.setData({
       destination: "B1 C区 C18",
-      voiceLabel: "语音",
+      voiceLabel: "待唤醒",
+      listenClass: "listen-state",
+      isListening: false,
       errorText: "语音能力不可用，已切换为比赛演示目的地。"
     });
   },
@@ -226,9 +299,13 @@ export default {
 
       const photo = await camera.takePhoto({ quality: "high" });
       const size = photo && photo.data ? photo.data.byteLength : 0;
+      const imageBase64 = photo && photo.data ? wx.arrayBufferToBase64(photo.data) : "";
+      const mimeType = photo && photo.mimeType ? photo.mimeType : "image/jpeg";
       return {
-        mimeType: photo && photo.mimeType ? photo.mimeType : "image/jpeg",
-        size
+        mimeType,
+        size,
+        imageBase64,
+        imageSrc: imageBase64 ? "data:" + mimeType + ";base64," + imageBase64 : ""
       };
     } catch (error) {
       return null;
@@ -259,7 +336,9 @@ export default {
         dataType: "json",
         data: {
           destination: this.data.destination,
-          photoMeta,
+          imageBase64: photoMeta && photoMeta.imageBase64 ? photoMeta.imageBase64 : "",
+          mimeType: photoMeta && photoMeta.mimeType ? photoMeta.mimeType : "image/jpeg",
+          size: photoMeta && photoMeta.size ? photoMeta.size : 0,
           scenario: "parking"
         },
         success: (response) => {
@@ -291,6 +370,8 @@ export default {
       progress: frame.progress,
       steps: this.toSteps(frame.activeStep),
       scanButtonText: frame.scanButtonText,
+      cameraImageSrc: photoMeta && photoMeta.imageSrc ? photoMeta.imageSrc : this.data.cameraImageSrc,
+      hasCameraFrame: photoMeta && photoMeta.imageSrc ? true : this.data.hasCameraFrame,
       frameIndex: this.data.frameIndex + 1,
       isScanning: false
     });
@@ -317,6 +398,10 @@ export default {
       scanButtonText: "拍照定位",
       frameIndex: 0,
       isScanning: false,
+      hasCameraFrame: false,
+      cameraImageSrc: "",
+      voiceCommand: "等待语音命令",
+      voiceHint: "说 leqi 后接：带我去 C18、拍照定位、继续校准、重置",
       errorText: ""
     });
   },
@@ -328,6 +413,131 @@ export default {
     return firstAlternative && firstAlternative.transcript
       ? firstAlternative.transcript
       : "";
+  },
+
+  getWakeWord(event) {
+    if (!event) {
+      return "";
+    }
+    const detail = event.detail || {};
+    return detail.wakeWord || detail.keyword || detail.text || event.wakeWord || "";
+  },
+
+  getVoiceText(event) {
+    if (!event) {
+      return "";
+    }
+    const detail = event.detail || {};
+    return detail.transcript || detail.command || detail.query || detail.text || detail.value || event.transcript || event.text || "";
+  },
+
+  handleVoiceCommand(text) {
+    const command = (text || "").trim();
+    if (!command) {
+      this.setData({
+        voiceLabel: "待唤醒",
+        listenClass: "listen-state",
+        isListening: false
+      });
+      return;
+    }
+
+    const destination = this.extractDestination(command);
+    const updates = {
+      voiceLabel: "待唤醒",
+      listenClass: "listen-state",
+      isListening: false,
+      lastVoiceText: command,
+      voiceCommand: "听到：" + command,
+      errorText: ""
+    };
+
+    if (destination) {
+      updates.destination = destination;
+    }
+
+    this.setData(updates);
+
+    if (command.indexOf("重置") >= 0 || command.indexOf("重新开始") >= 0) {
+      this.onResetTap();
+      return;
+    }
+
+    if (command.indexOf("偏航") >= 0 || command.indexOf("走错") >= 0 || command.indexOf("走偏") >= 0) {
+      this.onDeviationTap();
+      return;
+    }
+
+    if (
+      command.indexOf("拍照") >= 0 ||
+      command.indexOf("定位") >= 0 ||
+      command.indexOf("校准") >= 0 ||
+      command.indexOf("继续") >= 0 ||
+      command.indexOf("下一步") >= 0 ||
+      command.indexOf("开始") >= 0 ||
+      command.indexOf("导航") >= 0 ||
+      destination
+    ) {
+      this.onScanTap();
+      return;
+    }
+
+    this.setData({
+      voiceHint: "未识别命令，请说：带我去 C18、拍照定位、继续校准、重置"
+    });
+  },
+
+  extractDestination(command) {
+    let text = command || "";
+    if (
+      text.indexOf("重置") >= 0 ||
+      text.indexOf("偏航") >= 0 ||
+      text.indexOf("走错") >= 0 ||
+      text.indexOf("拍照") >= 0 ||
+      text.indexOf("校准") >= 0
+    ) {
+      return "";
+    }
+
+    text = text.replace("我要去", "");
+    text = text.replace("带我去", "");
+    text = text.replace("导航到", "");
+    text = text.replace("目的地是", "");
+    text = text.replace("寻找", "");
+    text = text.replace("找", "");
+    text = text.replace("去", "");
+    text = text.replace("，", "");
+    text = text.replace("。", "");
+    text = text.replace(",", "");
+    text = text.replace(".", "");
+    text = text.trim();
+
+    if (text === "leqi" || text === "乐奇" || text === "乐琪") {
+      return "";
+    }
+    if (text.length > 0 && text.length <= 32) {
+      return text;
+    }
+    return "";
+  },
+
+  async checkLanguageModel() {
+    if (this.data.apiBase) {
+      return;
+    }
+    try {
+      if (typeof LanguageModel === "undefined") {
+        return;
+      }
+      const availability = await LanguageModel.availability();
+      if (availability === "available") {
+        this.setData({
+          modelStatus: "端侧语言模型可用"
+        });
+      }
+    } catch (error) {
+      console.log("LanguageModel unavailable", error);
+    }
   },
 
   toLandmarks(labels) {
@@ -554,7 +764,7 @@ export default {
   flex-shrink: 0;
 }
 
-.destination-input {
+.destination-value {
   flex-grow: 1;
   min-width: 0;
   height: 34px;
@@ -565,6 +775,30 @@ export default {
   background-color: var(--input-background-color);
   color: var(--color-text-primary);
   font-size: 14px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+}
+
+.listen-state {
+  width: 66px;
+  height: 34px;
+  box-sizing: border-box;
+  border: var(--border-width-default) solid var(--border-color-muted);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  background-color: var(--color-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.listen-active {
+  border-color: var(--border-color-accent);
+  color: var(--color-primary);
+  background-color: var(--color-primary-40);
 }
 
 .voice-button,
@@ -614,6 +848,14 @@ export default {
   gap: 5px;
 }
 
+.camera-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.52;
+}
+
 .reticle {
   position: absolute;
   inset: 0;
@@ -640,6 +882,7 @@ export default {
 
 .place {
   position: relative;
+  z-index: 1;
   color: var(--color-text-primary);
   font-size: 19px;
   font-weight: 800;
@@ -648,6 +891,7 @@ export default {
 
 .orientation {
   position: relative;
+  z-index: 1;
   color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.2;
@@ -767,6 +1011,32 @@ export default {
 
 .step-label {
   font-weight: 700;
+}
+
+.voice-panel {
+  min-height: 36px;
+  padding: 6px 9px;
+  box-sizing: border-box;
+  border: var(--border-width-thin) solid var(--border-color-muted);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-background);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.voice-command {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.voice-hint {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  line-height: 1.1;
 }
 
 .control-row {
