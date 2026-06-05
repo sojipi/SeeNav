@@ -101,6 +101,8 @@
 <script setup>
 import wx from "wx";
 
+const DEFAULT_API_BASE = "https://web-production-68af3.up.railway.app";
+
 export default {
   data: {
     destination: "B1 C区 C18",
@@ -139,8 +141,9 @@ export default {
     cameraImageSrc: "",
     navigationActive: false,
     autoCaptureMs: 10000,
-    modelStatus: "本地演示",
-    apiBase: ""
+    modelStatus: "Railway 后端",
+    sessionId: "demo",
+    apiBase: DEFAULT_API_BASE
   },
 
   onLoad(options = {}) {
@@ -350,6 +353,7 @@ export default {
         dataType: "json",
         data: {
           destination: this.data.destination,
+          sessionId: this.data.sessionId,
           imageBase64: photoMeta && photoMeta.imageBase64 ? photoMeta.imageBase64 : "",
           mimeType: photoMeta && photoMeta.mimeType ? photoMeta.mimeType : "image/jpeg",
           size: photoMeta && photoMeta.size ? photoMeta.size : 0,
@@ -408,6 +412,7 @@ export default {
 
   onResetTap() {
     this.stopNavigationLoop("");
+    this.resetBackendSession();
     this.setData({
       routeState: "待定位",
       routeClass: "route-state",
@@ -429,6 +434,24 @@ export default {
       voiceHint: "说 leqi 后接：带我去 C18、开始导航、停止导航、重置",
       errorText: ""
     });
+  },
+
+  resetBackendSession() {
+    if (!this.data.apiBase) {
+      return;
+    }
+    try {
+      wx.request({
+        url: this.data.apiBase + "/api/visual-nav/reset",
+        method: "POST",
+        dataType: "json",
+        data: {
+          sessionId: this.data.sessionId
+        }
+      });
+    } catch (error) {
+      console.log("Backend reset unavailable", error);
+    }
   },
 
   pickTranscript(event) {
