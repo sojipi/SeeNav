@@ -363,6 +363,9 @@ export default {
         url,
         method: "POST",
         dataType: "json",
+        header: {
+          "Content-Type": "application/json"
+        },
         data: {
           destination: this.data.destination,
           sessionId: this.data.sessionId,
@@ -374,10 +377,12 @@ export default {
         success: (response) => {
           console.log("SeeNav backend response:", response.statusCode, response.data);
           if (response.statusCode >= 200 && response.statusCode < 300) {
+            const data = this.parseBackendResponse(response.data);
+            console.log("SeeNav backend parsed:", data);
             this.setData({
               modelStatus: "Railway 后端"
             });
-            resolve(response.data);
+            resolve(data);
           } else {
             reject(new Error("Backend status " + response.statusCode));
           }
@@ -388,6 +393,57 @@ export default {
         }
       });
     });
+  },
+
+  parseBackendResponse(data) {
+    if (!data) {
+      throw new Error("Empty backend response");
+    }
+    if (typeof data === "string") {
+      return JSON.parse(data);
+    }
+    if (this.isArrayBuffer(data)) {
+      return JSON.parse(this.arrayBufferToText(data));
+    }
+    if (typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView && ArrayBuffer.isView(data)) {
+      return JSON.parse(this.bytesToText(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)));
+    }
+    if (typeof data === "object") {
+      return data;
+    }
+    throw new Error("Unsupported backend response");
+  },
+
+  isArrayBuffer(value) {
+    return value &&
+      typeof value === "object" &&
+      typeof value.byteLength === "number" &&
+      typeof value.slice === "function" &&
+      typeof value.BYTES_PER_ELEMENT === "undefined";
+  },
+
+  arrayBufferToText(buffer) {
+    if (typeof TextDecoder !== "undefined") {
+      return new TextDecoder("utf-8").decode(buffer);
+    }
+    return this.bytesToText(new Uint8Array(buffer));
+  },
+
+  bytesToText(bytes) {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 4096) {
+      const end = Math.min(i + 4096, bytes.length);
+      let chunk = "";
+      for (let j = i; j < end; j += 1) {
+        chunk += String.fromCharCode(bytes[j]);
+      }
+      binary += chunk;
+    }
+    try {
+      return decodeURIComponent(escape(binary));
+    } catch (error) {
+      return binary;
+    }
   },
 
   formatError(error) {
