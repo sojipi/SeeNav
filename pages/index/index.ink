@@ -142,11 +142,14 @@ export default {
     navigationActive: false,
     autoCaptureMs: 10000,
     modelStatus: "Railway 后端",
-    sessionId: "demo",
+    sessionId: "",
     apiBase: DEFAULT_API_BASE
   },
 
   onLoad(options = {}) {
+    this.setData({
+      sessionId: options.sessionId ? decodeURIComponent(options.sessionId) : this.createSessionId()
+    });
     if (options.destination) {
       this.setData({
         destination: decodeURIComponent(options.destination)
@@ -158,7 +161,7 @@ export default {
         modelStatus: "后端模型"
       });
     }
-    console.log("SeeNav apiBase:", this.data.apiBase || "local-demo");
+    console.log("SeeNav apiBase:", this.data.apiBase || "local-demo", "session:", this.data.sessionId);
     this.checkLanguageModel();
   },
 
@@ -459,6 +462,10 @@ export default {
     return String(error);
   },
 
+  createSessionId() {
+    return "seenav-" + Date.now() + "-" + Math.floor(Math.random() * 1000000);
+  },
+
   applyNavigationFrame(frame, photoMeta) {
     const metaPrefix = photoMeta
       ? "实拍 · " + Math.round(photoMeta.size / 1024) + "KB"
@@ -502,6 +509,7 @@ export default {
     this.stopNavigationLoop("");
     this.resetBackendSession();
     this.setData({
+      sessionId: this.createSessionId(),
       routeState: "待定位",
       routeClass: "route-state",
       frameMeta: "等待眼镜画面",
