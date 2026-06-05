@@ -158,6 +158,7 @@ export default {
         modelStatus: "后端模型"
       });
     }
+    console.log("SeeNav apiBase:", this.data.apiBase || "local-demo");
     this.checkLanguageModel();
   },
 
@@ -318,6 +319,11 @@ export default {
       const size = photo && photo.data ? photo.data.byteLength : 0;
       const imageBase64 = photo && photo.data ? wx.arrayBufferToBase64(photo.data) : "";
       const mimeType = photo && photo.mimeType ? photo.mimeType : "image/jpeg";
+      console.log("SeeNav photo captured:", {
+        size,
+        mimeType,
+        hasImage: Boolean(imageBase64)
+      });
       return {
         mimeType,
         size,
@@ -332,10 +338,13 @@ export default {
   async resolveNavigation(photoMeta) {
     if (this.data.apiBase) {
       try {
+        console.log("SeeNav calling backend:", this.data.apiBase);
         return await this.requestBackend(photoMeta);
       } catch (error) {
+        console.log("SeeNav backend unavailable:", error);
         this.setData({
-          errorText: "后端暂不可用，已切换为本地演示推理。"
+          modelStatus: "本地演示",
+          errorText: "后端请求失败，已切换为本地演示：" + this.formatError(error)
         });
       }
     }
@@ -347,8 +356,11 @@ export default {
 
   requestBackend(photoMeta) {
     return new Promise((resolve, reject) => {
+      const apiBase = (this.data.apiBase || "").replace(/\/+$/, "");
+      const url = apiBase + "/api/visual-nav/locate";
+      console.log("SeeNav wx.request:", url);
       wx.request({
-        url: this.data.apiBase + "/api/visual-nav/locate",
+        url,
         method: "POST",
         dataType: "json",
         data: {
@@ -360,15 +372,35 @@ export default {
           scenario: "parking"
         },
         success: (response) => {
+          console.log("SeeNav backend response:", response.statusCode, response.data);
           if (response.statusCode >= 200 && response.statusCode < 300) {
+            this.setData({
+              modelStatus: "Railway 后端"
+            });
             resolve(response.data);
           } else {
-            reject(new Error("Unexpected backend status"));
+            reject(new Error("Backend status " + response.statusCode));
           }
         },
-        fail: reject
+        fail: (error) => {
+          console.log("SeeNav backend request failed:", error);
+          reject(error);
+        }
       });
     });
+  },
+
+  formatError(error) {
+    if (!error) {
+      return "unknown";
+    }
+    if (error.message) {
+      return error.message;
+    }
+    if (error.errMsg) {
+      return error.errMsg;
+    }
+    return String(error);
   },
 
   applyNavigationFrame(frame, photoMeta) {
