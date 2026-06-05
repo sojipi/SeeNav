@@ -105,19 +105,19 @@ const DEFAULT_API_BASE = "https://web-production-68af3.up.railway.app";
 
 export default {
   data: {
-    destination: "B1 C区 C18",
+    destination: "待确认",
     routeState: "待定位",
     routeClass: "route-state",
-    frameMeta: "等待眼镜画面",
+    frameMeta: "等待目标车位",
     currentPlace: "未知位置",
-    orientation: "等待拍照判断朝向",
+    orientation: "先确认目标车位和停车场地图",
     landmarks: [
       { id: "0-停车场地图", label: "停车场地图" },
-      { id: "1-车位号", label: "车位号" },
-      { id: "2-柱号", label: "柱号" },
-      { id: "3-店铺招牌", label: "店铺招牌" }
+      { id: "1-目标车位", label: "目标车位" },
+      { id: "2-分区颜色", label: "分区颜色" },
+      { id: "3-当前位置", label: "当前位置" }
     ],
-    nextAction: "先拍摄眼前环境，系统会用地标判断你在哪里。",
+    nextAction: "说开始导航后，先告诉我目标车位。",
     confidence: 0,
     progress: 0,
     steps: [
@@ -130,7 +130,7 @@ export default {
     voiceLabel: "待唤醒",
     listenClass: "listen-state",
     voiceCommand: "等待语音命令",
-    voiceHint: "说 leqi 后接：带我去 C18、拍照定位、继续校准、重置",
+    voiceHint: "说 leqi 后接：开始导航、带我去 C18、停止导航、重置",
     errorText: "",
     frameIndex: 0,
     isScanning: false,
@@ -140,6 +140,11 @@ export default {
     hasCameraFrame: false,
     cameraImageSrc: "",
     navigationActive: false,
+    navigationPhase: "idle",
+    mapImageBase64: "",
+    mapMimeType: "",
+    mapSize: 0,
+    mapCapturedAt: 0,
     autoCaptureMs: 10000,
     modelStatus: "Railway 后端",
     sessionId: "",
@@ -295,6 +300,16 @@ export default {
       return;
     }
 
+    if (this.data.navigationPhase === "awaitingMap") {
+      await this.captureParkingMap();
+      return;
+    }
+
+    if (this.data.navigationPhase !== "navigating") {
+      this.promptForDestination();
+      return;
+    }
+
     this.clearAutoScanTimer();
     this.setData({
       isScanning: true,
@@ -309,6 +324,58 @@ export default {
     const result = await this.resolveNavigation(photoMeta);
 
     this.applyNavigationFrame(result, photoMeta);
+  },
+
+  async captureParkingMap() {
+    if (this.data.isScanning) {
+      return;
+    }
+
+    this.clearAutoScanTimer();
+    this.setData({
+      isScanning: true,
+      scanButtonText: "读取地图",
+      frameMeta: "等待停车场地图",
+      currentPlace: "正在读取地图当前位置",
+      orientation: "请让地图完整进入眼镜视野",
+      voiceHint: "请把停车场地图放到镜头前，确认后等待开始导航",
+      errorText: ""
+    });
+
+    const mapMeta = await this.capturePhotoMeta();
+    if (!mapMeta || !mapMeta.imageBase64) {
+      this.setData({
+        isScanning: false,
+        scanButtonText: "拍地图",
+        voiceHint: "没有收到地图画面，请重新拍停车场地图。",
+        errorText: "停车场地图未捕获。"
+      });
+      this.speak("没有收到地图画面，请重新拍停车场地图。");
+      return;
+    }
+
+    this.setData({
+      mapImageBase64: mapMeta.imageBase64,
+      mapMimeType: mapMeta.mimeType,
+      mapSize: mapMeta.size,
+      mapCapturedAt: Date.now(),
+      cameraImageSrc: mapMeta.imageSrc,
+      hasCameraFrame: true,
+      navigationPhase: "navigating",
+      navigationActive: true,
+      isScanning: false,
+      routeState: "地图已读取",
+      routeClass: "route-state route-ok",
+      frameMeta: "停车场地图 · " + Math.round(mapMeta.size / 1024) + "KB",
+      currentPlace: "地图当前位置已作为起点",
+      orientation: "后续根据分区颜色和眼镜视野校准方向",
+      landmarks: this.toLandmarks(["地图当前位置", "目标 " + this.data.destination, "分区颜色", "停车区域"]),
+      nextAction: "地图已收到，现在拍摄前方停车区域开始导航。",
+      scanButtonText: "开始校准",
+      voiceHint: "地图已读取，正在拍摄前方停车区域开始导航。"
+    });
+    this.speak("地图已收到，现在拍摄前方停车区域开始导航。");
+    await this.onScanTap({ source: "map" });
   },
 
   async capturePhotoMeta() {
@@ -375,6 +442,15 @@ export default {
           imageBase64: photoMeta && photoMeta.imageBase64 ? photoMeta.imageBase64 : "",
           mimeType: photoMeta && photoMeta.mimeType ? photoMeta.mimeType : "image/jpeg",
           size: photoMeta && photoMeta.size ? photoMeta.size : 0,
+          mapBase64: this.data.mapImageBase64,
+          mapMimeType: this.data.mapMimeType || "image/jpeg",
+          mapSize: this.data.mapSize,
+          mapCapturedAt: this.data.mapCapturedAt,
+          routeContext: {
+            phase: this.data.navigationPhase,
+            startSource: "parking_map",
+            visualFocus: "parking_area_color"
+          },
           scenario: "parking"
         },
         success: (response) => {
@@ -510,13 +586,14 @@ export default {
     this.resetBackendSession();
     this.setData({
       sessionId: this.createSessionId(),
+      destination: "待确认",
       routeState: "待定位",
       routeClass: "route-state",
-      frameMeta: "等待眼镜画面",
+      frameMeta: "等待目标车位",
       currentPlace: "未知位置",
-      orientation: "等待拍照判断朝向",
-      landmarks: this.toLandmarks(["停车场地图", "车位号", "柱号", "店铺招牌"]),
-      nextAction: "先拍摄眼前环境，系统会用地标判断你在哪里。",
+      orientation: "先确认目标车位和停车场地图",
+      landmarks: this.toLandmarks(["停车场地图", "目标车位", "分区颜色", "当前位置"]),
+      nextAction: "说开始导航后，先告诉我目标车位。",
       confidence: 0,
       progress: 0,
       steps: this.toSteps(0),
@@ -526,6 +603,11 @@ export default {
       hasCameraFrame: false,
       cameraImageSrc: "",
       navigationActive: false,
+      navigationPhase: "idle",
+      mapImageBase64: "",
+      mapMimeType: "",
+      mapSize: 0,
+      mapCapturedAt: 0,
       voiceCommand: "等待语音命令",
       voiceHint: "说 leqi 后接：带我去 C18、开始导航、停止导航、重置",
       errorText: ""
@@ -587,6 +669,7 @@ export default {
     }
 
     const destination = this.extractDestination(command);
+    const phase = this.data.navigationPhase;
     const updates = {
       voiceLabel: "待唤醒",
       listenClass: "listen-state",
@@ -596,7 +679,7 @@ export default {
       errorText: ""
     };
 
-    if (destination) {
+    if (destination && phase !== "awaitingMap") {
       updates.destination = destination;
     }
 
@@ -609,6 +692,9 @@ export default {
 
     if (command.indexOf("停止") >= 0 || command.indexOf("暂停") >= 0 || command.indexOf("结束导航") >= 0) {
       this.stopNavigationLoop("自动校准已停止。");
+      this.setData({
+        navigationPhase: "idle"
+      });
       return;
     }
 
@@ -617,17 +703,35 @@ export default {
       return;
     }
 
-    if (
-      command.indexOf("拍照") >= 0 ||
-      command.indexOf("定位") >= 0 ||
-      command.indexOf("校准") >= 0 ||
-      command.indexOf("继续") >= 0 ||
-      command.indexOf("下一步") >= 0 ||
-      command.indexOf("开始") >= 0 ||
-      command.indexOf("导航") >= 0 ||
-      destination
-    ) {
-      this.startNavigationLoop();
+    if (phase === "awaitingDestination") {
+      this.acceptDestination(destination || this.normalizeDestination(command));
+      return;
+    }
+
+    if (phase === "awaitingMap") {
+      if (this.isMapCaptureCommand(command)) {
+        this.captureParkingMap();
+        return;
+      }
+      this.promptForMap();
+      return;
+    }
+
+    if (this.isStartCommand(command)) {
+      if (destination) {
+        this.acceptDestination(destination);
+        return;
+      }
+      this.promptForDestination();
+      return;
+    }
+
+    if (destination) {
+      this.acceptDestination(destination);
+      return;
+    }
+
+    if (phase === "navigating" && this.isScanCommand(command)) {
       this.onScanTap({ source: "voice" });
       return;
     }
@@ -637,9 +741,92 @@ export default {
     });
   },
 
+  promptForDestination() {
+    this.clearAutoScanTimer();
+    this.setData({
+      navigationPhase: "awaitingDestination",
+      navigationActive: false,
+      destination: "待确认",
+      routeState: "待目标",
+      routeClass: "route-state",
+      frameMeta: "等待目标车位",
+      currentPlace: "等待目标车位",
+      orientation: "请说目标车位，例如 C18",
+      nextAction: "请告诉我目标车位。",
+      scanButtonText: "等待目标",
+      voiceHint: "请说目标车位，例如 C18 或 B1 C区 C18。",
+      errorText: ""
+    });
+    this.speak("请告诉我目标车位，例如 C18。");
+  },
+
+  acceptDestination(destination) {
+    const target = this.normalizeDestination(destination);
+    if (!target || target === "待确认") {
+      this.promptForDestination();
+      return;
+    }
+
+    this.clearAutoScanTimer();
+    this.resetBackendSession();
+    this.setData({
+      sessionId: this.createSessionId(),
+      destination: target,
+      navigationPhase: "awaitingMap",
+      navigationActive: false,
+      routeState: "待地图",
+      routeClass: "route-state",
+      frameMeta: "等待停车场地图",
+      currentPlace: "等待地图当前位置",
+      orientation: "地图需要包含当前位置和分区颜色",
+      landmarks: this.toLandmarks(["目标 " + target, "停车场地图", "当前位置", "分区颜色"]),
+      nextAction: "请提供停车场地图，地图里需要包含当前位置和停车区域颜色。",
+      scanButtonText: "拍地图",
+      voiceHint: "请把停车场地图放到镜头前，然后说地图好了或拍地图。",
+      errorText: ""
+    });
+    this.speak("目标车位是" + target + "。请把停车场地图放到镜头前，地图需要包含当前位置和停车区域颜色。准备好后说地图好了。");
+  },
+
+  promptForMap() {
+    this.setData({
+      navigationPhase: "awaitingMap",
+      routeState: "待地图",
+      frameMeta: "等待停车场地图",
+      currentPlace: "等待地图当前位置",
+      orientation: "请提供包含当前位置和分区颜色的停车场地图",
+      nextAction: "请把停车场地图放到镜头前，然后说地图好了或拍地图。",
+      scanButtonText: "拍地图",
+      voiceHint: "请说地图好了，或把地图对准镜头后说拍地图。"
+    });
+    this.speak("请提供停车场地图。地图需要包含当前位置和停车区域颜色。");
+  },
+
+  isStartCommand(command) {
+    return command.indexOf("开始") >= 0 || command.indexOf("导航") >= 0 || command.indexOf("带路") >= 0;
+  },
+
+  isScanCommand(command) {
+    return command.indexOf("拍照") >= 0 ||
+      command.indexOf("定位") >= 0 ||
+      command.indexOf("校准") >= 0 ||
+      command.indexOf("继续") >= 0 ||
+      command.indexOf("下一步") >= 0;
+  },
+
+  isMapCaptureCommand(command) {
+    return command.indexOf("地图") >= 0 ||
+      command.indexOf("拍") >= 0 ||
+      command.indexOf("好了") >= 0 ||
+      command.indexOf("完成") >= 0 ||
+      command.indexOf("确认") >= 0 ||
+      command.indexOf("提供") >= 0;
+  },
+
   startNavigationLoop() {
     this.clearAutoScanTimer();
     this.setData({
+      navigationPhase: "navigating",
       navigationActive: true,
       voiceHint: "已开始导航：每 10 秒自动拍照校准一次"
     });
@@ -687,6 +874,7 @@ export default {
       text.indexOf("结束") >= 0 ||
       text.indexOf("偏航") >= 0 ||
       text.indexOf("走错") >= 0 ||
+      text.indexOf("地图") >= 0 ||
       text.indexOf("拍照") >= 0 ||
       text.indexOf("定位") >= 0 ||
       text.indexOf("校准") >= 0 ||
@@ -702,6 +890,9 @@ export default {
     text = text.replace("我要去", "");
     text = text.replace("带我去", "");
     text = text.replace("导航到", "");
+    text = text.replace("目标车位是", "");
+    text = text.replace("目标车位", "");
+    text = text.replace("车位是", "");
     text = text.replace("目的地是", "");
     text = text.replace("寻找", "");
     text = text.replace("找", "");
@@ -719,6 +910,29 @@ export default {
       return text;
     }
     return "";
+  },
+
+  normalizeDestination(value) {
+    let text = String(value || "");
+    text = text.replace("目标车位是", "");
+    text = text.replace("目标车位", "");
+    text = text.replace("车位是", "");
+    text = text.replace("目的地是", "");
+    text = text.replace("我要去", "");
+    text = text.replace("带我去", "");
+    text = text.replace("导航到", "");
+    text = text.replace("寻找", "");
+    text = text.replace("找", "");
+    text = text.replace("去", "");
+    text = text.replace("，", "");
+    text = text.replace("。", "");
+    text = text.replace(",", "");
+    text = text.replace(".", "");
+    text = text.trim();
+    if (text === "leqi" || text === "乐奇" || text === "乐琪") {
+      return "";
+    }
+    return text.length <= 32 ? text : "";
   },
 
   async checkLanguageModel() {
