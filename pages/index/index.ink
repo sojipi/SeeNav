@@ -130,7 +130,7 @@ export default {
     voiceLabel: "待唤醒",
     listenClass: "listen-state",
     voiceCommand: "等待语音命令",
-    voiceHint: "说 leqi 后接：开始导航、带我去 C18、停止导航、重置",
+    voiceHint: "说 leqi 后接：开始导航、带我去 L104、停止导航、重置",
     errorText: "",
     frameIndex: 0,
     isScanning: false,
@@ -287,11 +287,11 @@ export default {
 
   useVoiceFallback() {
     this.setData({
-      destination: "B1 C区 C18",
+      destination: "待确认",
       voiceLabel: "待唤醒",
       listenClass: "listen-state",
       isListening: false,
-      errorText: "语音能力不可用，已切换为比赛演示目的地。"
+      errorText: "语音能力不可用，请用调试输入提供目标车位。"
     });
   },
 
@@ -609,7 +609,7 @@ export default {
       mapSize: 0,
       mapCapturedAt: 0,
       voiceCommand: "等待语音命令",
-      voiceHint: "说 leqi 后接：带我去 C18、开始导航、停止导航、重置",
+      voiceHint: "说 leqi 后接：带我去 L104、开始导航、停止导航、重置",
       errorText: ""
     });
   },
@@ -737,7 +737,7 @@ export default {
     }
 
     this.setData({
-      voiceHint: "未识别命令，请说：带我去 C18、开始导航、停止导航、重置"
+      voiceHint: "未识别命令，请说：带我去 L104、开始导航、停止导航、重置"
     });
   },
 
@@ -751,13 +751,13 @@ export default {
       routeClass: "route-state",
       frameMeta: "等待目标车位",
       currentPlace: "等待目标车位",
-      orientation: "请说目标车位，例如 C18",
+      orientation: "请说目标车位，例如 L104",
       nextAction: "请告诉我目标车位。",
       scanButtonText: "等待目标",
-      voiceHint: "请说目标车位，例如 C18 或 B1 C区 C18。",
+      voiceHint: "请说目标车位，例如 L104。",
       errorText: ""
     });
-    this.speak("请告诉我目标车位，例如 C18。");
+    this.speak("请告诉我目标车位，例如 L104。");
   },
 
   acceptDestination(destination) {
