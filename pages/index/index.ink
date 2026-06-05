@@ -137,6 +137,8 @@ export default {
     lastVoiceText: "",
     hasCameraFrame: false,
     cameraImageSrc: "",
+    navigationActive: false,
+    autoCaptureMs: 10000,
     modelStatus: "本地演示",
     apiBase: ""
   },
@@ -154,6 +156,14 @@ export default {
       });
     }
     this.checkLanguageModel();
+  },
+
+  onHide() {
+    this.stopNavigationLoop("页面已隐藏，自动校准已停止。");
+  },
+
+  onUnload() {
+    this.stopNavigationLoop("页面已关闭，自动校准已停止。");
   },
 
   onDestinationInput(event) {
@@ -273,14 +283,18 @@ export default {
     });
   },
 
-  async onScanTap() {
+  async onScanTap(options = {}) {
     if (this.data.isScanning) {
       return;
     }
 
+    this.clearAutoScanTimer();
     this.setData({
       isScanning: true,
       scanButtonText: "分析中",
+      voiceHint: options.source === "auto"
+        ? "自动校准中：正在拍照判断位置和方向"
+        : "正在拍照判断位置和方向",
       errorText: ""
     });
 
@@ -377,6 +391,15 @@ export default {
     });
 
     this.speak(frame.nextAction);
+
+    if (this.isArrived(frame)) {
+      this.stopNavigationLoop("已到达目的地，自动校准已停止。");
+      return;
+    }
+
+    if (this.data.navigationActive) {
+      this.scheduleNextAutoScan();
+    }
   },
 
   onDeviationTap() {
@@ -384,6 +407,7 @@ export default {
   },
 
   onResetTap() {
+    this.stopNavigationLoop("");
     this.setData({
       routeState: "待定位",
       routeClass: "route-state",
@@ -400,8 +424,9 @@ export default {
       isScanning: false,
       hasCameraFrame: false,
       cameraImageSrc: "",
+      navigationActive: false,
       voiceCommand: "等待语音命令",
-      voiceHint: "说 leqi 后接：带我去 C18、拍照定位、继续校准、重置",
+      voiceHint: "说 leqi 后接：带我去 C18、开始导航、停止导航、重置",
       errorText: ""
     });
   },
@@ -463,6 +488,11 @@ export default {
       return;
     }
 
+    if (command.indexOf("停止") >= 0 || command.indexOf("暂停") >= 0 || command.indexOf("结束导航") >= 0) {
+      this.stopNavigationLoop("自动校准已停止。");
+      return;
+    }
+
     if (command.indexOf("偏航") >= 0 || command.indexOf("走错") >= 0 || command.indexOf("走偏") >= 0) {
       this.onDeviationTap();
       return;
@@ -478,23 +508,74 @@ export default {
       command.indexOf("导航") >= 0 ||
       destination
     ) {
-      this.onScanTap();
+      this.startNavigationLoop();
+      this.onScanTap({ source: "voice" });
       return;
     }
 
     this.setData({
-      voiceHint: "未识别命令，请说：带我去 C18、拍照定位、继续校准、重置"
+      voiceHint: "未识别命令，请说：带我去 C18、开始导航、停止导航、重置"
     });
+  },
+
+  startNavigationLoop() {
+    this.clearAutoScanTimer();
+    this.setData({
+      navigationActive: true,
+      voiceHint: "已开始导航：每 10 秒自动拍照校准一次"
+    });
+  },
+
+  stopNavigationLoop(message) {
+    this.clearAutoScanTimer();
+    this.setData({
+      navigationActive: false,
+      isScanning: false,
+      voiceHint: message || this.data.voiceHint
+    });
+  },
+
+  scheduleNextAutoScan() {
+    this.clearAutoScanTimer();
+    this.setData({
+      voiceHint: "导航中：10 秒后自动拍照校准"
+    });
+    this.autoScanTimer = setTimeout(() => {
+      if (!this.data.navigationActive || this.data.isScanning) {
+        return;
+      }
+      this.onScanTap({ source: "auto" });
+    }, this.data.autoCaptureMs);
+  },
+
+  clearAutoScanTimer() {
+    if (this.autoScanTimer) {
+      clearTimeout(this.autoScanTimer);
+      this.autoScanTimer = null;
+    }
+  },
+
+  isArrived(frame) {
+    return frame && (frame.progress >= 100 || frame.routeState === "已到达");
   },
 
   extractDestination(command) {
     let text = command || "";
     if (
       text.indexOf("重置") >= 0 ||
+      text.indexOf("停止") >= 0 ||
+      text.indexOf("暂停") >= 0 ||
+      text.indexOf("结束") >= 0 ||
       text.indexOf("偏航") >= 0 ||
       text.indexOf("走错") >= 0 ||
       text.indexOf("拍照") >= 0 ||
-      text.indexOf("校准") >= 0
+      text.indexOf("定位") >= 0 ||
+      text.indexOf("校准") >= 0 ||
+      text.indexOf("继续") >= 0 ||
+      text.indexOf("下一步") >= 0 ||
+      text === "开始导航" ||
+      text === "导航" ||
+      text === "开始"
     ) {
       return "";
     }
