@@ -299,7 +299,6 @@ export default {
 
   useVoiceFallback() {
     this.setData({
-      destination: "待确认",
       voiceLabel: "待唤醒",
       listenClass: "listen-state",
       isListening: false,
@@ -838,6 +837,23 @@ export default {
       return;
     }
 
+    if (phase === "navigating") {
+      if (this.isScanCommand(command)) {
+        this.onScanTap({ source: "voice" });
+        return;
+      }
+      if (this.isStartCommand(command)) {
+        this.setData({
+          voiceHint: "导航已在进行中，目标是 " + this.data.destination + "。"
+        });
+        return;
+      }
+      if (destination) {
+        this.acceptDestination(destination);
+        return;
+      }
+    }
+
     if (this.isStartCommand(command)) {
       if (destination) {
         this.acceptDestination(destination);
@@ -849,11 +865,6 @@ export default {
 
     if (destination) {
       this.acceptDestination(destination);
-      return;
-    }
-
-    if (phase === "navigating" && this.isScanCommand(command)) {
-      this.onScanTap({ source: "voice" });
       return;
     }
 
