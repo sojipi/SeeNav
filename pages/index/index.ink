@@ -83,6 +83,12 @@
   </view>
 </page>
 
+<script def>
+{
+  "navigationBarTitleText": "视觉导航"
+}
+</script>
+
 <script setup>
 import wx from "wx";
 
