@@ -489,7 +489,15 @@ export default {
 
     await new Promise((resolve) => setTimeout(resolve, 520));
     const index = this.data.frameIndex % 4;
-    return this.getDemoFrame(index);
+    const frame = this.getDemoFrame(index);
+    if (photoMeta && photoMeta.frameSource === "parking_map") {
+      frame.frameMeta = "地图首帧 · 本地路线";
+      frame.currentPlace = "地图标注当前位置";
+      frame.orientation = "已根据地图当前位置建立路线";
+      frame.nextAction = "已根据地图当前位置开始导航，沿地图路线前进并在 10 秒后自动校准视野。";
+      frame.scanButtonText = "继续校准";
+    }
+    return frame;
   },
 
   requestBackend(photoMeta) {
@@ -511,6 +519,7 @@ export default {
         url,
         method: "POST",
         dataType: "json",
+        timeout: frameSource === "parking_map" ? 18000 : 22000,
         header: {
           "Content-Type": "application/json"
         },
@@ -540,12 +549,16 @@ export default {
         success: (response) => {
           console.log("SeeNav backend response:", response.statusCode, response.data);
           if (response.statusCode >= 200 && response.statusCode < 300) {
-            const data = this.parseBackendResponse(response.data);
-            console.log("SeeNav backend parsed:", data);
-            this.setData({
-              modelStatus: "Railway 后端"
-            });
-            resolve(data);
+            try {
+              const data = this.parseBackendResponse(response.data);
+              console.log("SeeNav backend parsed:", data);
+              this.setData({
+                modelStatus: "Railway 后端"
+              });
+              resolve(data);
+            } catch (error) {
+              reject(error);
+            }
           } else {
             reject(new Error("Backend status " + response.statusCode));
           }
@@ -553,6 +566,9 @@ export default {
         fail: (error) => {
           console.log("SeeNav backend request failed:", error);
           reject(error);
+        },
+        complete: (response) => {
+          console.log("SeeNav backend request complete:", response && response.errMsg);
         }
       });
     });
