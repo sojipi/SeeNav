@@ -4,7 +4,7 @@ export default {
   },
 
   globalData: {
-    appName: "SeeNav",
+    appName: "视觉导航",
     demoMode: true
   }
 };

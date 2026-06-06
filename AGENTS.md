@@ -2,7 +2,7 @@
 
 ## Identity
 
-- **Name**: SeeNav
+- **Name**: 视觉导航
 - **Version**: 1.0.0
 - **Description**: A visual landmark navigation app for smart glasses.
 - **Author**: Developer
