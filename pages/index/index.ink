@@ -42,10 +42,6 @@
         </view>
       </view>
 
-      <view class="map-panel">
-        <canvas id="navMapCanvas" class="map-canvas"></canvas>
-      </view>
-
       <view class="landmark-row">
         <text class="mini-label">识别地标</text>
         <view class="chips">
@@ -151,7 +147,6 @@ export default {
     mapSize: 0,
     mapCapturedAt: 0,
     mapIMU: null,
-    navMap: null,
     autoCaptureMs: 10000,
     modelStatus: "Railway 后端",
     sessionId: "",
@@ -426,17 +421,17 @@ export default {
       navigationPhase: "navigating",
       navigationActive: true,
       isScanning: true,
-      routeState: "地图已读取",
-      routeClass: "route-state route-ok",
+      routeState: "后端建图中",
+      routeClass: "route-state route-warn",
       frameMeta: "停车场地图 · " + Math.round(mapMeta.size / 1024) + "KB",
-      currentPlace: "地图当前位置已作为起点",
-      orientation: "后续根据分区颜色和眼镜视野校准方向",
+      currentPlace: "等待后端识别地图当前位置",
+      orientation: "正在结合地图、目标和 IMU 方位建图",
       landmarks: this.toLandmarks(["地图当前位置", "目标 " + this.data.destination, "分区颜色", "停车区域"]),
-      nextAction: "地图已收到，正在根据地图当前位置开始导航。",
+      nextAction: "地图已收到，正在等待后端建图，请稍候。",
       scanButtonText: "分析中",
-      voiceHint: "地图已读取，正在根据地图当前位置开始导航。"
+      voiceHint: "正在等待后端根据地图建立路线。"
     });
-    this.speak("地图已收到，正在根据地图当前位置开始导航。");
+    this.speak("地图已收到，正在等待后端建图。");
     const result = await this.resolveNavigation(mapMeta);
     if (cancelToken !== this.getNavigationCancelToken() || !this.data.navigationActive) {
       return;
@@ -514,12 +509,33 @@ export default {
     return new Promise((resolve, reject) => {
       const apiBase = (this.data.apiBase || "").replace(/\/+$/, "");
       const url = apiBase + "/api/visual-nav/locate";
+      const requestTimeoutMs = frameSource === "parking_map" ? 18000 : 22000;
+      let settled = false;
+      let requestTask = null;
+      const settle = (callback, value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeoutId);
+        callback(value);
+      };
+      const timeoutId = setTimeout(() => {
+        if (requestTask && requestTask.abort) {
+          try {
+            requestTask.abort();
+          } catch (error) {
+            console.log("SeeNav backend abort failed:", error);
+          }
+        }
+        settle(reject, new Error("Backend request timeout " + requestTimeoutMs + "ms"));
+      }, requestTimeoutMs);
       console.log("SeeNav wx.request:", url);
-      wx.request({
+      requestTask = wx.request({
         url,
         method: "POST",
         dataType: "json",
-        timeout: frameSource === "parking_map" ? 18000 : 22000,
+        timeout: requestTimeoutMs,
         header: {
           "Content-Type": "application/json"
         },
@@ -547,6 +563,9 @@ export default {
           scenario: "parking"
         },
         success: (response) => {
+          if (settled) {
+            return;
+          }
           console.log("SeeNav backend response:", response.statusCode, response.data);
           if (response.statusCode >= 200 && response.statusCode < 300) {
             try {
@@ -555,17 +574,20 @@ export default {
               this.setData({
                 modelStatus: "Railway 后端"
               });
-              resolve(data);
+              settle(resolve, data);
             } catch (error) {
-              reject(error);
+              settle(reject, error);
             }
           } else {
-            reject(new Error("Backend status " + response.statusCode));
+            settle(reject, new Error("Backend status " + response.statusCode));
           }
         },
         fail: (error) => {
+          if (settled) {
+            return;
+          }
           console.log("SeeNav backend request failed:", error);
-          reject(error);
+          settle(reject, error);
         },
         complete: (response) => {
           console.log("SeeNav backend request complete:", response && response.errMsg);
@@ -660,14 +682,12 @@ export default {
       progress: frame.progress,
       steps: this.toSteps(frame.activeStep),
       scanButtonText: frame.scanButtonText,
-      navMap: frame.navMap || this.data.navMap,
       cameraImageSrc: photoMeta && photoMeta.imageSrc ? photoMeta.imageSrc : this.data.cameraImageSrc,
       hasCameraFrame: photoMeta && photoMeta.imageSrc ? true : this.data.hasCameraFrame,
       frameIndex: this.data.frameIndex + 1,
       isScanning: false
     });
 
-    this.drawNavMap(frame.navMap || this.data.navMap);
     this.speak(frame.nextAction);
 
     if (this.isArrived(frame)) {
@@ -712,7 +732,6 @@ export default {
       mapSize: 0,
       mapCapturedAt: 0,
       mapIMU: null,
-      navMap: null,
       imuStatus: this.data.imuStatus,
       voiceCommand: "等待语音命令",
       voiceHint: "说 leqi 后接：带我去 L104、开始导航、停止导航、重置",
@@ -1435,92 +1454,6 @@ export default {
     return result;
   },
 
-  drawNavMap(navMap) {
-    if (!navMap || !navMap.nodes || navMap.nodes.length === 0) {
-      return;
-    }
-    try {
-      const ctx = wx.createCanvasContext("navMapCanvas");
-      if (!ctx) {
-        return;
-      }
-      const width = 452;
-      const height = 72;
-      const padding = 14;
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(0, 0, width, height);
-
-      const nodesById = {};
-      for (let i = 0; i < navMap.nodes.length; i += 1) {
-        const node = navMap.nodes[i];
-        nodesById[node.id] = {
-          id: node.id,
-          label: node.label,
-          type: node.type,
-          x: padding + this.unitNumber(node.x, i / Math.max(1, navMap.nodes.length - 1)) * (width - padding * 2),
-          y: padding + this.unitNumber(node.y, 0.5) * (height - padding * 2)
-        };
-      }
-
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#335544";
-      const edges = navMap.edges || [];
-      for (let i = 0; i < edges.length; i += 1) {
-        const start = nodesById[edges[i].from];
-        const end = nodesById[edges[i].to];
-        if (start && end) {
-          ctx.beginPath();
-          ctx.moveTo(start.x, start.y);
-          ctx.lineTo(end.x, end.y);
-          ctx.stroke();
-        }
-      }
-
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "#40FF5E";
-      const route = navMap.route || [];
-      for (let i = 0; i < route.length - 1; i += 1) {
-        const start = nodesById[route[i]];
-        const end = nodesById[route[i + 1]];
-        if (start && end) {
-          ctx.beginPath();
-          ctx.moveTo(start.x, start.y);
-          ctx.lineTo(end.x, end.y);
-          ctx.stroke();
-        }
-      }
-
-      for (let i = 0; i < navMap.nodes.length; i += 1) {
-        const node = nodesById[navMap.nodes[i].id];
-        const isCurrent = node.id === navMap.currentNodeId || node.type === "current";
-        const isTarget = node.id === navMap.targetNodeId || node.type === "target";
-        ctx.beginPath();
-        ctx.fillStyle = isCurrent ? "#40FF5E" : isTarget ? "yellow" : "#ffffff";
-        ctx.arc(node.x, node.y, isCurrent || isTarget ? 5 : 3, 0, Math.PI * 2);
-        ctx.fill();
-        if (isCurrent || isTarget) {
-          ctx.font = "10px Arial";
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(isCurrent ? "当前位置" : node.label, Math.min(width - 58, node.x + 7), Math.max(10, node.y - 7));
-        }
-      }
-
-      if (ctx.flush) {
-        ctx.flush();
-      }
-    } catch (error) {
-      console.log("SeeNav map canvas unavailable:", error);
-    }
-  },
-
-  unitNumber(value, fallback) {
-    if (typeof value === "number" && isFinite(value)) {
-      return Math.max(0, Math.min(1, value));
-    }
-    return Math.max(0, Math.min(1, fallback));
-  },
-
   getDemoFrame(index) {
     const frames = [
       {
@@ -1791,8 +1724,8 @@ export default {
 
 .vision-box {
   position: relative;
-  height: 64px;
-  padding: 8px 12px;
+  height: 96px;
+  padding: 12px;
   box-sizing: border-box;
   overflow: hidden;
   border: var(--border-width-default) solid var(--border-color-muted);
@@ -1851,20 +1784,6 @@ export default {
   color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.2;
-}
-
-.map-panel {
-  height: 76px;
-  padding: 2px;
-  box-sizing: border-box;
-  border: var(--border-width-thin) solid var(--border-color-muted);
-  border-radius: var(--radius-sm);
-  background-color: var(--color-background);
-}
-
-.map-canvas {
-  width: 452px;
-  height: 72px;
 }
 
 .landmark-row {
