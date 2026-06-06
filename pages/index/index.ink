@@ -21,27 +21,6 @@
         </view>
       </view>
 
-      <view class="vision-panel">
-        <view class="vision-header">
-          <text class="mini-label">眼镜视野</text>
-          <text class="frame-meta">{{ modelStatus }} · {{ frameMeta }}</text>
-        </view>
-        <view class="vision-box">
-          <image
-            ink:if="{{ hasCameraFrame }}"
-            class="camera-frame"
-            src="{{ cameraImageSrc }}"
-            mode="scaleToFill"
-          ></image>
-          <view class="reticle">
-            <view class="reticle-line"></view>
-            <view class="reticle-dot"></view>
-          </view>
-          <text class="place">{{ currentPlace }}</text>
-          <text class="orientation">{{ orientation }}</text>
-        </view>
-      </view>
-
       <view class="landmark-row">
         <text class="mini-label">识别地标</text>
         <view class="chips">
@@ -509,7 +488,7 @@ export default {
     return new Promise((resolve, reject) => {
       const apiBase = (this.data.apiBase || "").replace(/\/+$/, "");
       const url = apiBase + "/api/visual-nav/locate";
-      const requestTimeoutMs = frameSource === "parking_map" ? 18000 : 22000;
+      const requestTimeoutMs = frameSource === "parking_map" ? 45000 : 35000;
       let settled = false;
       let requestTask = null;
       const settle = (callback, value) => {
@@ -1570,7 +1549,6 @@ export default {
 
 .topbar,
 .destination-row,
-.vision-header,
 .metric-head,
 .control-row {
   display: flex;
@@ -1717,95 +1695,12 @@ export default {
   background-color: var(--color-background);
 }
 
-.vision-panel {
-  position: absolute;
-  top: 100px;
-  left: 86px;
-  width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.vision-header {
-  justify-content: space-between;
-}
-
-.frame-meta {
-  color: var(--color-text-secondary);
-  font-size: 10px;
-}
-
-.vision-box {
-  position: relative;
-  height: 118px;
-  padding: 12px;
-  box-sizing: border-box;
-  overflow: hidden;
-  border: var(--border-width-default) solid var(--border-color-muted);
-  border-radius: var(--radius-md);
-  background-color: var(--color-background);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-}
-
-.camera-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.52;
-}
-
-.reticle {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.4;
-}
-
-.reticle-line {
-  width: 88%;
-  height: 2px;
-  background-color: var(--color-primary-60);
-}
-
-.reticle-dot {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  border: var(--border-width-default) solid var(--color-primary);
-  border-radius: 10px;
-  background-color: var(--color-background);
-}
-
-.place {
-  position: relative;
-  z-index: 1;
-  color: var(--color-text-primary);
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.15;
-}
-
-.orientation {
-  position: relative;
-  z-index: 1;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  line-height: 1.2;
-}
-
 .landmark-row {
   position: absolute;
   left: 10px;
-  bottom: 70px;
-  width: 218px;
-  height: 58px;
+  top: 96px;
+  width: 222px;
+  height: 86px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1834,8 +1729,8 @@ export default {
   position: absolute;
   left: 10px;
   bottom: 10px;
-  width: 290px;
-  height: 52px;
+  width: 300px;
+  height: 72px;
   padding: 5px 8px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-accent);
@@ -1898,7 +1793,7 @@ export default {
 
 .trace-row {
   position: absolute;
-  top: 214px;
+  top: 188px;
   right: 10px;
   width: 146px;
   display: grid;
@@ -1941,7 +1836,7 @@ export default {
   right: 10px;
   bottom: 10px;
   width: 150px;
-  height: 52px;
+  height: 72px;
   padding: 4px 8px;
   box-sizing: border-box;
   border: var(--border-width-thin) solid var(--border-color-muted);
