@@ -162,6 +162,7 @@ export default {
       timestamp: 0,
       startedAt: 0
     },
+    imuStatus: "pending",
     imuListening: false
   },
 
@@ -341,6 +342,8 @@ export default {
       errorText: ""
     });
 
+    this.startIMUListeners();
+    await this.waitForIMUReading(700);
     const photoMeta = await this.capturePhotoMeta();
     if (photoMeta) {
       photoMeta.imu = this.captureIMUSnapshot();
@@ -378,7 +381,12 @@ export default {
       return;
     }
 
+    this.startIMUListeners();
+    await this.waitForIMUReading(900);
     const mapIMU = this.captureIMUSnapshot();
+    mapMeta.imu = mapIMU;
+    mapMeta.frameSource = "parking_map";
+    mapMeta.frameLabel = "地图";
     this.setData({
       mapImageBase64: mapMeta.imageBase64,
       mapMimeType: mapMeta.mimeType,
@@ -389,19 +397,20 @@ export default {
       hasCameraFrame: true,
       navigationPhase: "navigating",
       navigationActive: true,
-      isScanning: false,
+      isScanning: true,
       routeState: "地图已读取",
       routeClass: "route-state route-ok",
       frameMeta: "停车场地图 · " + Math.round(mapMeta.size / 1024) + "KB",
       currentPlace: "地图当前位置已作为起点",
       orientation: "后续根据分区颜色和眼镜视野校准方向",
       landmarks: this.toLandmarks(["地图当前位置", "目标 " + this.data.destination, "分区颜色", "停车区域"]),
-      nextAction: "地图已收到，现在拍摄前方停车区域开始导航。",
-      scanButtonText: "开始校准",
-      voiceHint: "地图已读取，正在拍摄前方停车区域开始导航。"
+      nextAction: "地图已收到，正在根据地图当前位置开始导航。",
+      scanButtonText: "分析中",
+      voiceHint: "地图已读取，正在根据地图当前位置开始导航。"
     });
-    this.speak("地图已收到，现在拍摄前方停车区域开始导航。");
-    await this.onScanTap({ source: "map" });
+    this.speak("地图已收到，正在根据地图当前位置开始导航。");
+    const result = await this.resolveNavigation(mapMeta);
+    this.applyNavigationFrame(result, mapMeta);
   },
 
   async capturePhotoMeta() {
@@ -454,6 +463,15 @@ export default {
 
   requestBackend(photoMeta) {
     const frameIMU = photoMeta && photoMeta.imu ? photoMeta.imu : this.captureIMUSnapshot();
+    const frameSource = photoMeta && photoMeta.frameSource ? photoMeta.frameSource : "camera";
+    console.log("SeeNav IMU payload:", {
+      imuListening: this.data.imuListening,
+      imuStatus: this.data.imuStatus,
+      frameHasReading: Boolean(frameIMU && frameIMU.hasReading),
+      mapHasReading: Boolean(this.data.mapIMU && this.data.mapIMU.hasReading),
+      headingDegrees: frameIMU ? frameIMU.headingDegrees : null,
+      mapHeadingDegrees: this.data.mapIMU ? this.data.mapIMU.headingDegrees : null
+    });
     return new Promise((resolve, reject) => {
       const apiBase = (this.data.apiBase || "").replace(/\/+$/, "");
       const url = apiBase + "/api/visual-nav/locate";
@@ -472,6 +490,7 @@ export default {
           mimeType: photoMeta && photoMeta.mimeType ? photoMeta.mimeType : "image/jpeg",
           size: photoMeta && photoMeta.size ? photoMeta.size : 0,
           capturedAt: photoMeta && photoMeta.capturedAt ? photoMeta.capturedAt : Date.now(),
+          frameSource,
           mapBase64: this.data.mapImageBase64,
           mapMimeType: this.data.mapMimeType || "image/jpeg",
           mapSize: this.data.mapSize,
@@ -482,7 +501,7 @@ export default {
           routeContext: {
             phase: this.data.navigationPhase,
             startSource: "parking_map",
-            visualFocus: "parking_area_color",
+            visualFocus: frameSource === "parking_map" ? "parking_map_current_position" : "parking_area_color",
             orientationReference: "map_capture_imu"
           },
           scenario: "parking"
@@ -577,8 +596,9 @@ export default {
   },
 
   applyNavigationFrame(frame, photoMeta) {
+    const frameLabel = photoMeta && photoMeta.frameLabel ? photoMeta.frameLabel : "实拍";
     const metaPrefix = photoMeta
-      ? "实拍 · " + Math.round(photoMeta.size / 1024) + "KB"
+      ? frameLabel + " · " + Math.round(photoMeta.size / 1024) + "KB"
       : frame.frameMeta;
 
     this.setData({
@@ -643,6 +663,7 @@ export default {
       mapSize: 0,
       mapCapturedAt: 0,
       mapIMU: null,
+      imuStatus: this.data.imuStatus,
       voiceCommand: "等待语音命令",
       voiceHint: "说 leqi 后接：带我去 L104、开始导航、停止导航、重置",
       errorText: ""
@@ -999,13 +1020,19 @@ export default {
     }
 
     const sensors = [];
+    const sensorRefs = {};
     const startedAt = Date.now();
     const startSensor = (label, SensorCtor, onReading) => {
       if (typeof SensorCtor !== "function") {
+        console.log("SeeNav " + label + " constructor unavailable");
         return;
       }
       try {
         const sensor = new SensorCtor({ frequency: 15 });
+        sensorRefs[label] = sensor;
+        sensor.addEventListener("activate", (event) => {
+          console.log("SeeNav " + label + " sensor activated:", event && event.sessionId);
+        });
         sensor.addEventListener("reading", (event) => {
           onReading(sensor, event || {});
         });
@@ -1024,21 +1051,25 @@ export default {
     const OrientationCtor = typeof AbsoluteOrientationSensor !== "undefined" ? AbsoluteOrientationSensor : null;
 
     startSensor("accelerometer", AccelerometerCtor, (sensor, event) => {
+      const reading = this.sensorVectorReading(sensor, event);
       this.setData({
-        "imuData.accelerometer": this.sensorVectorReading(sensor, event),
-        "imuData.timestamp": Date.now()
+        "imuData.accelerometer": reading,
+        "imuData.timestamp": Date.now(),
+        imuStatus: reading.hasReading ? "ready" : "warming"
       });
     });
 
     startSensor("gyroscope", GyroscopeCtor, (sensor, event) => {
+      const reading = this.sensorVectorReading(sensor, event);
       this.setData({
-        "imuData.gyroscope": this.sensorVectorReading(sensor, event),
-        "imuData.timestamp": Date.now()
+        "imuData.gyroscope": reading,
+        "imuData.timestamp": Date.now(),
+        imuStatus: reading.hasReading ? "ready" : "warming"
       });
     });
 
     startSensor("orientation", OrientationCtor, (sensor, event) => {
-      const quaternion = this.normalizeQuaternion(sensor.quaternion || event.quaternion || [event.x, event.y, event.z, event.w]);
+      const quaternion = this.sensorQuaternionReading(sensor, event);
       if (!quaternion) {
         return;
       }
@@ -1049,16 +1080,25 @@ export default {
           timestamp: this.pickSensorTimestamp(sensor, event),
           hasReading: true
         },
-        "imuData.timestamp": Date.now()
+        "imuData.timestamp": Date.now(),
+        imuStatus: "ready"
       });
     });
 
     this.imuSensors = sensors;
+    this.imuSensorRefs = sensorRefs;
     this.setData({
       imuListening: sensors.length > 0,
+      imuStatus: sensors.length > 0 ? "warming" : "unavailable",
       "imuData.startedAt": startedAt
     });
     console.log("SeeNav IMU listeners started:", sensors.length);
+    setTimeout(() => {
+      this.refreshIMUFromSensors();
+    }, 180);
+    setTimeout(() => {
+      this.refreshIMUFromSensors();
+    }, 600);
   },
 
   stopIMUListeners() {
@@ -1071,11 +1111,13 @@ export default {
       }
     }
     this.imuSensors = [];
+    this.imuSensorRefs = {};
     this.setData({ imuListening: false });
     console.log("SeeNav IMU listeners stopped");
   },
 
   captureIMUSnapshot() {
+    this.refreshIMUFromSensors();
     const imu = this.data.imuData || {};
     const orientation = imu.orientation || {};
     const euler = orientation.euler || {};
@@ -1114,13 +1156,98 @@ export default {
   },
 
   sensorVectorReading(sensor, event) {
+    const x = this.finiteNumber(event.x, sensor.x);
+    const y = this.finiteNumber(event.y, sensor.y);
+    const z = this.finiteNumber(event.z, sensor.z);
     return {
-      x: this.finiteNumber(event.x, sensor.x),
-      y: this.finiteNumber(event.y, sensor.y),
-      z: this.finiteNumber(event.z, sensor.z),
+      x,
+      y,
+      z,
       timestamp: this.pickSensorTimestamp(sensor, event),
-      hasReading: true
+      hasReading: x !== null && y !== null && z !== null
     };
+  },
+
+  sensorQuaternionReading(sensor, event) {
+    return this.normalizeQuaternion(sensor.quaternion) ||
+      this.normalizeQuaternion(event.quaternion) ||
+      this.normalizeQuaternion([event.x, event.y, event.z, event.w]);
+  },
+
+  refreshIMUFromSensors() {
+    const refs = this.imuSensorRefs || {};
+    const updates = {};
+    let hasReading = false;
+
+    if (refs.accelerometer && refs.accelerometer.hasReading) {
+      const reading = this.sensorVectorReading(refs.accelerometer, {});
+      if (reading.hasReading) {
+        updates["imuData.accelerometer"] = reading;
+        hasReading = true;
+      }
+    }
+
+    if (refs.gyroscope && refs.gyroscope.hasReading) {
+      const reading = this.sensorVectorReading(refs.gyroscope, {});
+      if (reading.hasReading) {
+        updates["imuData.gyroscope"] = reading;
+        hasReading = true;
+      }
+    }
+
+    if (refs.orientation && refs.orientation.hasReading) {
+      const quaternion = this.sensorQuaternionReading(refs.orientation, {});
+      if (quaternion) {
+        updates["imuData.orientation"] = {
+          quaternion,
+          euler: this.quaternionToEuler(quaternion),
+          timestamp: this.pickSensorTimestamp(refs.orientation, {}),
+          hasReading: true
+        };
+        hasReading = true;
+      }
+    }
+
+    if (hasReading) {
+      updates["imuData.timestamp"] = Date.now();
+      updates.imuStatus = "ready";
+      this.setData(updates);
+      return true;
+    }
+
+    return Boolean(this.data.imuData && (
+      (this.data.imuData.accelerometer && this.data.imuData.accelerometer.hasReading) ||
+      (this.data.imuData.gyroscope && this.data.imuData.gyroscope.hasReading) ||
+      (this.data.imuData.orientation && this.data.imuData.orientation.hasReading)
+    ));
+  },
+
+  waitForIMUReading(timeoutMs) {
+    if (this.refreshIMUFromSensors()) {
+      return Promise.resolve(true);
+    }
+    if (!this.data.imuListening && !(this.imuSensors && this.imuSensors.length > 0)) {
+      return Promise.resolve(false);
+    }
+
+    const startedAt = Date.now();
+    return new Promise((resolve) => {
+      const poll = () => {
+        if (this.refreshIMUFromSensors()) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startedAt >= timeoutMs) {
+          this.setData({
+            imuStatus: "waiting"
+          });
+          resolve(false);
+          return;
+        }
+        setTimeout(poll, 80);
+      };
+      poll();
+    });
   },
 
   cloneIMUReading(reading) {
