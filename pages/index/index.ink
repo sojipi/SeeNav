@@ -42,6 +42,10 @@
         </view>
       </view>
 
+      <view class="map-panel">
+        <canvas id="navMapCanvas" class="map-canvas"></canvas>
+      </view>
+
       <view class="landmark-row">
         <text class="mini-label">识别地标</text>
         <view class="chips">
@@ -147,6 +151,7 @@ export default {
     mapSize: 0,
     mapCapturedAt: 0,
     mapIMU: null,
+    navMap: null,
     autoCaptureMs: 10000,
     modelStatus: "Railway 后端",
     sessionId: "",
@@ -639,12 +644,14 @@ export default {
       progress: frame.progress,
       steps: this.toSteps(frame.activeStep),
       scanButtonText: frame.scanButtonText,
+      navMap: frame.navMap || this.data.navMap,
       cameraImageSrc: photoMeta && photoMeta.imageSrc ? photoMeta.imageSrc : this.data.cameraImageSrc,
       hasCameraFrame: photoMeta && photoMeta.imageSrc ? true : this.data.hasCameraFrame,
       frameIndex: this.data.frameIndex + 1,
       isScanning: false
     });
 
+    this.drawNavMap(frame.navMap || this.data.navMap);
     this.speak(frame.nextAction);
 
     if (this.isArrived(frame)) {
@@ -689,6 +696,7 @@ export default {
       mapSize: 0,
       mapCapturedAt: 0,
       mapIMU: null,
+      navMap: null,
       imuStatus: this.data.imuStatus,
       voiceCommand: "等待语音命令",
       voiceHint: "说 leqi 后接：带我去 L104、开始导航、停止导航、重置",
@@ -1411,6 +1419,92 @@ export default {
     return result;
   },
 
+  drawNavMap(navMap) {
+    if (!navMap || !navMap.nodes || navMap.nodes.length === 0) {
+      return;
+    }
+    try {
+      const ctx = wx.createCanvasContext("navMapCanvas");
+      if (!ctx) {
+        return;
+      }
+      const width = 432;
+      const height = 52;
+      const padding = 12;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, width, height);
+
+      const nodesById = {};
+      for (let i = 0; i < navMap.nodes.length; i += 1) {
+        const node = navMap.nodes[i];
+        nodesById[node.id] = {
+          id: node.id,
+          label: node.label,
+          type: node.type,
+          x: padding + this.unitNumber(node.x, i / Math.max(1, navMap.nodes.length - 1)) * (width - padding * 2),
+          y: padding + this.unitNumber(node.y, 0.5) * (height - padding * 2)
+        };
+      }
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#335544";
+      const edges = navMap.edges || [];
+      for (let i = 0; i < edges.length; i += 1) {
+        const start = nodesById[edges[i].from];
+        const end = nodesById[edges[i].to];
+        if (start && end) {
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(end.x, end.y);
+          ctx.stroke();
+        }
+      }
+
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#40FF5E";
+      const route = navMap.route || [];
+      for (let i = 0; i < route.length - 1; i += 1) {
+        const start = nodesById[route[i]];
+        const end = nodesById[route[i + 1]];
+        if (start && end) {
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(end.x, end.y);
+          ctx.stroke();
+        }
+      }
+
+      for (let i = 0; i < navMap.nodes.length; i += 1) {
+        const node = nodesById[navMap.nodes[i].id];
+        const isCurrent = node.id === navMap.currentNodeId || node.type === "current";
+        const isTarget = node.id === navMap.targetNodeId || node.type === "target";
+        ctx.beginPath();
+        ctx.fillStyle = isCurrent ? "#40FF5E" : isTarget ? "yellow" : "#ffffff";
+        ctx.arc(node.x, node.y, isCurrent || isTarget ? 5 : 3, 0, Math.PI * 2);
+        ctx.fill();
+        if (isCurrent || isTarget) {
+          ctx.font = "10px Arial";
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(isCurrent ? "当前位置" : node.label, Math.min(width - 58, node.x + 7), Math.max(10, node.y - 7));
+        }
+      }
+
+      if (ctx.flush) {
+        ctx.flush();
+      }
+    } catch (error) {
+      console.log("SeeNav map canvas unavailable:", error);
+    }
+  },
+
+  unitNumber(value, fallback) {
+    if (typeof value === "number" && isFinite(value)) {
+      return Math.max(0, Math.min(1, value));
+    }
+    return Math.max(0, Math.min(1, fallback));
+  },
+
   getDemoFrame(index) {
     const frames = [
       {
@@ -1515,14 +1609,14 @@ export default {
 
 .card {
   height: 364px;
-  padding: 12px;
+  padding: 10px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-default);
   border-radius: var(--radius-md);
   background-color: var(--color-surface);
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
 }
 
 .topbar,
@@ -1677,8 +1771,8 @@ export default {
 
 .vision-box {
   position: relative;
-  height: 78px;
-  padding: 12px;
+  height: 62px;
+  padding: 9px 12px;
   box-sizing: border-box;
   overflow: hidden;
   border: var(--border-width-default) solid var(--border-color-muted);
@@ -1739,6 +1833,20 @@ export default {
   line-height: 1.2;
 }
 
+.map-panel {
+  height: 54px;
+  padding: 2px;
+  box-sizing: border-box;
+  border: var(--border-width-thin) solid var(--border-color-muted);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-background);
+}
+
+.map-canvas {
+  width: 432px;
+  height: 52px;
+}
+
 .landmark-row {
   display: flex;
   align-items: flex-start;
@@ -1763,8 +1871,8 @@ export default {
 }
 
 .guidance {
-  min-height: 48px;
-  padding: 8px 10px;
+  min-height: 42px;
+  padding: 6px 10px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-accent);
   border-radius: var(--radius-md);
@@ -1856,8 +1964,8 @@ export default {
 }
 
 .voice-panel {
-  min-height: 36px;
-  padding: 6px 9px;
+  min-height: 30px;
+  padding: 5px 9px;
   box-sizing: border-box;
   border: var(--border-width-thin) solid var(--border-color-muted);
   border-radius: var(--radius-sm);
