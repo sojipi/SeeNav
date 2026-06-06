@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "看见式导航",
+  "navigationBarTitleText": "视觉导航",
   "description": "A smart-glasses visual landmark navigation UI that locates a pedestrian from camera frames, voice destination input, and movement progress, then gives landmark-based turn guidance.",
   "schema": {
     "data": {

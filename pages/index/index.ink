@@ -4,7 +4,7 @@
       <view class="topbar">
         <view class="brand">
           <text class="eyebrow">SeeNav</text>
-          <text class="title">看见式导航</text>
+          <text class="title">视觉导航</text>
         </view>
         <view class="{{ routeClass }}">
           <text>{{ routeState }}</text>

@@ -3,7 +3,7 @@
     "pages/index/index"
   ],
   "window": {
-    "navigationBarTitleText": "看见式导航",
+    "navigationBarTitleText": "视觉导航",
     "viewport": {
       "width": "device-width"
     }
