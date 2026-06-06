@@ -62,13 +62,6 @@
         </view>
       </view>
 
-      <view class="trace-row">
-        <view class="{{ item.className }}" ink:for="{{ steps }}" ink:key="id">
-          <text class="step-index">{{ item.id }}</text>
-          <text class="step-label">{{ item.label }}</text>
-        </view>
-      </view>
-
       <view class="voice-panel">
         <text class="voice-command">{{ voiceCommand }}</text>
         <text class="voice-hint">{{ voiceHint }}</text>
@@ -116,12 +109,6 @@ export default {
       { id: "graph", label: "智能建图", className: "analysis-step" },
       { id: "imu", label: "IMU判断", className: "analysis-step" },
       { id: "guide", label: "地标指引", className: "analysis-step" }
-    ],
-    steps: [
-      { id: "1", label: "定位", className: "step" },
-      { id: "2", label: "直行", className: "step" },
-      { id: "3", label: "右转", className: "step" },
-      { id: "4", label: "到达", className: "step" }
     ],
     scanButtonText: "拍照定位",
     voiceLabel: "待唤醒",
@@ -682,7 +669,6 @@ export default {
       confidence: frame.confidence,
       progress: frame.progress,
       analysisFlow: this.toAnalysisFlow("guide", frame.analysisFlow),
-      steps: this.toSteps(frame.activeStep),
       scanButtonText: frame.scanButtonText,
       cameraImageSrc: photoMeta && photoMeta.imageSrc ? photoMeta.imageSrc : this.data.cameraImageSrc,
       hasCameraFrame: photoMeta && photoMeta.imageSrc ? true : this.data.hasCameraFrame,
@@ -722,7 +708,6 @@ export default {
       confidence: 0,
       progress: 0,
       analysisFlow: this.toAnalysisFlow("idle"),
-      steps: this.toSteps(0),
       scanButtonText: "拍照定位",
       frameIndex: 0,
       isScanning: false,
@@ -1475,24 +1460,6 @@ export default {
     return landmarks;
   },
 
-  toSteps(activeStep) {
-    const steps = [
-      { id: "1", label: "定位" },
-      { id: "2", label: "直行" },
-      { id: "3", label: "右转" },
-      { id: "4", label: "到达" }
-    ];
-    const result = [];
-    for (let i = 0; i < steps.length; i += 1) {
-      result.push({
-        id: steps[i].id,
-        label: steps[i].label,
-        className: Number(steps[i].id) <= activeStep ? "step step-active" : "step"
-      });
-    }
-    return result;
-  },
-
   getDemoFrame(index) {
     const frames = [
       {
@@ -1892,46 +1859,6 @@ export default {
 
 .analysis-waiting {
   color: var(--color-text-secondary);
-}
-
-.trace-row {
-  position: absolute;
-  top: 188px;
-  right: 10px;
-  width: 146px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
-}
-
-.step {
-  height: 25px;
-  padding: 3px 5px;
-  box-sizing: border-box;
-  border: var(--border-width-thin) solid var(--border-color-muted);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
-  background-color: var(--color-background);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  font-size: 11px;
-  line-height: 1.1;
-}
-
-.step-active {
-  border-color: var(--border-color-accent);
-  color: var(--color-text-primary);
-  background-color: var(--color-surface-highlight);
-}
-
-.step-index {
-  font-weight: 800;
-}
-
-.step-label {
-  font-weight: 700;
 }
 
 .voice-panel {
