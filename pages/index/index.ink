@@ -141,6 +141,7 @@ export default {
     cameraImageSrc: "",
     navigationActive: false,
     navigationPhase: "idle",
+    navigationCancelToken: 0,
     mapImageBase64: "",
     mapMimeType: "",
     mapSize: 0,
@@ -201,8 +202,13 @@ export default {
   },
 
   onDestinationInput(event) {
+    const value = event && event.detail ? event.detail.value : "";
+    if (this.isStopCommand(value)) {
+      this.handleVoiceCommand(value);
+      return;
+    }
     this.setData({
-      destination: event.detail.value,
+      destination: value,
       errorText: ""
     });
   },
@@ -321,6 +327,7 @@ export default {
     if (this.data.isScanning) {
       return;
     }
+    const cancelToken = this.getNavigationCancelToken();
 
     if (this.data.navigationPhase === "awaitingMap") {
       await this.captureParkingMap();
@@ -344,11 +351,20 @@ export default {
 
     this.startIMUListeners();
     await this.waitForIMUReading(700);
+    if (cancelToken !== this.getNavigationCancelToken() || !this.data.navigationActive) {
+      return;
+    }
     const photoMeta = await this.capturePhotoMeta();
+    if (cancelToken !== this.getNavigationCancelToken() || !this.data.navigationActive) {
+      return;
+    }
     if (photoMeta) {
       photoMeta.imu = this.captureIMUSnapshot();
     }
     const result = await this.resolveNavigation(photoMeta);
+    if (cancelToken !== this.getNavigationCancelToken() || !this.data.navigationActive) {
+      return;
+    }
 
     this.applyNavigationFrame(result, photoMeta);
   },
@@ -357,6 +373,7 @@ export default {
     if (this.data.isScanning) {
       return;
     }
+    const cancelToken = this.getNavigationCancelToken();
 
     this.clearAutoScanTimer();
     this.setData({
@@ -370,6 +387,9 @@ export default {
     });
 
     const mapMeta = await this.capturePhotoMeta();
+    if (cancelToken !== this.getNavigationCancelToken()) {
+      return;
+    }
     if (!mapMeta || !mapMeta.imageBase64) {
       this.setData({
         isScanning: false,
@@ -383,6 +403,9 @@ export default {
 
     this.startIMUListeners();
     await this.waitForIMUReading(900);
+    if (cancelToken !== this.getNavigationCancelToken()) {
+      return;
+    }
     const mapIMU = this.captureIMUSnapshot();
     mapMeta.imu = mapIMU;
     mapMeta.frameSource = "parking_map";
@@ -410,6 +433,9 @@ export default {
     });
     this.speak("地图已收到，正在根据地图当前位置开始导航。");
     const result = await this.resolveNavigation(mapMeta);
+    if (cancelToken !== this.getNavigationCancelToken() || !this.data.navigationActive) {
+      return;
+    }
     this.applyNavigationFrame(result, mapMeta);
   },
 
@@ -746,11 +772,18 @@ export default {
       return;
     }
 
-    if (command.indexOf("停止") >= 0 || command.indexOf("暂停") >= 0 || command.indexOf("结束导航") >= 0) {
-      this.stopNavigationLoop("自动校准已停止。");
+    if (this.isStopCommand(command)) {
+      this.stopNavigationLoop("导航已停止。");
       this.setData({
-        navigationPhase: "idle"
+        navigationPhase: "idle",
+        routeState: "已停止",
+        routeClass: "route-state",
+        scanButtonText: "拍照定位",
+        nextAction: "导航已停止。说开始导航可以重新开始。",
+        voiceCommand: "听到：" + command,
+        voiceHint: "导航已停止。"
       });
+      this.speak("导航已停止。");
       return;
     }
 
@@ -862,6 +895,16 @@ export default {
     return command.indexOf("开始") >= 0 || command.indexOf("导航") >= 0 || command.indexOf("带路") >= 0;
   },
 
+  isStopCommand(command) {
+    const text = String(command || "").replace(/\s+/g, "");
+    return text.indexOf("停止") >= 0 ||
+      text.indexOf("暂停") >= 0 ||
+      text.indexOf("结束导航") >= 0 ||
+      text.indexOf("取消导航") >= 0 ||
+      text.indexOf("退出导航") >= 0 ||
+      text.indexOf("不用导航") >= 0;
+  },
+
   isScanCommand(command) {
     return command.indexOf("拍照") >= 0 ||
       command.indexOf("定位") >= 0 ||
@@ -890,11 +933,21 @@ export default {
 
   stopNavigationLoop(message) {
     this.clearAutoScanTimer();
+    const cancelToken = this.getNavigationCancelToken() + 1;
+    this.navigationCancelToken = cancelToken;
     this.setData({
       navigationActive: false,
       isScanning: false,
+      navigationCancelToken: cancelToken,
       voiceHint: message || this.data.voiceHint
     });
+  },
+
+  getNavigationCancelToken() {
+    if (typeof this.navigationCancelToken !== "number") {
+      this.navigationCancelToken = this.data.navigationCancelToken || 0;
+    }
+    return this.navigationCancelToken;
   },
 
   scheduleNextAutoScan() {
