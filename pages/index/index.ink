@@ -1444,9 +1444,9 @@ export default {
       if (!ctx) {
         return;
       }
-      const width = 432;
-      const height = 52;
-      const padding = 12;
+      const width = 452;
+      const height = 72;
+      const padding = 14;
       ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = "#000000";
       ctx.fillRect(0, 0, width, height);
@@ -1616,23 +1616,23 @@ export default {
 <style>
 .page {
   width: 480px;
-  min-height: 380px;
-  padding: 8px;
+  height: 400px;
+  padding: 6px;
   box-sizing: border-box;
   background-color: #000000;
   color: var(--color-text-primary);
 }
 
 .card {
-  height: 364px;
-  padding: 10px;
+  height: 388px;
+  padding: 8px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-default);
   border-radius: var(--radius-md);
   background-color: var(--color-surface);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .topbar,
@@ -1665,22 +1665,26 @@ export default {
 
 .title {
   color: var(--color-text-primary);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
   line-height: 1.1;
 }
 
 .route-state {
   min-width: 78px;
-  padding: 7px 10px;
+  height: 28px;
+  padding: 0 10px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-muted);
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
   background-color: var(--color-background);
   text-align: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .route-ok {
@@ -1719,7 +1723,7 @@ export default {
 .destination-value {
   flex-grow: 1;
   min-width: 0;
-  height: 34px;
+  height: 28px;
   padding: 0 10px;
   box-sizing: border-box;
   border: var(--input-border-width) solid var(--input-border-color);
@@ -1734,7 +1738,7 @@ export default {
 
 .listen-state {
   width: 66px;
-  height: 34px;
+  height: 28px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-muted);
   border-radius: var(--radius-sm);
@@ -1773,7 +1777,7 @@ export default {
 .vision-panel {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
 }
 
 .vision-header {
@@ -1787,8 +1791,8 @@ export default {
 
 .vision-box {
   position: relative;
-  height: 62px;
-  padding: 9px 12px;
+  height: 64px;
+  padding: 8px 12px;
   box-sizing: border-box;
   overflow: hidden;
   border: var(--border-width-default) solid var(--border-color-muted);
@@ -1836,7 +1840,7 @@ export default {
   position: relative;
   z-index: 1;
   color: var(--color-text-primary);
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 800;
   line-height: 1.15;
 }
@@ -1845,12 +1849,12 @@ export default {
   position: relative;
   z-index: 1;
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.2;
 }
 
 .map-panel {
-  height: 54px;
+  height: 76px;
   padding: 2px;
   box-sizing: border-box;
   border: var(--border-width-thin) solid var(--border-color-muted);
@@ -1859,14 +1863,14 @@ export default {
 }
 
 .map-canvas {
-  width: 432px;
-  height: 52px;
+  width: 452px;
+  height: 72px;
 }
 
 .landmark-row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
 }
 
 .chips {
@@ -1877,7 +1881,7 @@ export default {
 }
 
 .chip {
-  padding: 4px 7px;
+  padding: 3px 6px;
   border: var(--border-width-thin) solid var(--border-color-muted);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
@@ -1887,8 +1891,8 @@ export default {
 }
 
 .guidance {
-  min-height: 42px;
-  padding: 6px 10px;
+  min-height: 40px;
+  padding: 5px 9px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-accent);
   border-radius: var(--radius-md);
@@ -1900,7 +1904,7 @@ export default {
 
 .action {
   color: var(--color-text-primary);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   line-height: 1.25;
 }
@@ -1908,13 +1912,13 @@ export default {
 .metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
 }
 
 .metric {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
 }
 
 .metric-head {
@@ -1924,14 +1928,14 @@ export default {
 }
 
 .bar {
-  height: 7px;
+  height: 6px;
   overflow: hidden;
   border-radius: 7px;
   background-color: var(--color-background);
 }
 
 .bar-fill {
-  height: 7px;
+  height: 6px;
   border-radius: 7px;
 }
 
@@ -1950,8 +1954,8 @@ export default {
 }
 
 .step {
-  height: 28px;
-  padding: 4px 5px;
+  height: 24px;
+  padding: 3px 5px;
   box-sizing: border-box;
   border: var(--border-width-thin) solid var(--border-color-muted);
   border-radius: var(--radius-sm);
@@ -1980,8 +1984,8 @@ export default {
 }
 
 .voice-panel {
-  min-height: 30px;
-  padding: 5px 9px;
+  min-height: 28px;
+  padding: 4px 8px;
   box-sizing: border-box;
   border: var(--border-width-thin) solid var(--border-color-muted);
   border-radius: var(--radius-sm);
