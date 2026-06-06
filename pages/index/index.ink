@@ -1549,23 +1549,23 @@ export default {
 <style>
 .page {
   width: 480px;
-  height: 400px;
-  padding: 6px;
+  height: 352px;
+  padding: 4px;
   box-sizing: border-box;
   background-color: #000000;
   color: var(--color-text-primary);
 }
 
 .card {
-  height: 388px;
-  padding: 8px;
+  position: relative;
+  width: 472px;
+  height: 344px;
+  padding: 0;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-default);
   border-radius: var(--radius-md);
   background-color: var(--color-surface);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  overflow: hidden;
 }
 
 .topbar,
@@ -1578,8 +1578,13 @@ export default {
 }
 
 .topbar {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  height: 30px;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .brand {
@@ -1592,13 +1597,13 @@ export default {
 .mini-label,
 .field-label {
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.2;
 }
 
 .title {
   color: var(--color-text-primary);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
   line-height: 1.1;
 }
@@ -1645,11 +1650,16 @@ export default {
 }
 
 .destination-row {
-  gap: 8px;
+  position: absolute;
+  top: 43px;
+  left: 10px;
+  width: 222px;
+  height: 28px;
+  gap: 6px;
 }
 
 .field-label {
-  width: 44px;
+  width: 36px;
   flex-shrink: 0;
 }
 
@@ -1657,20 +1667,20 @@ export default {
   flex-grow: 1;
   min-width: 0;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   box-sizing: border-box;
   border: var(--input-border-width) solid var(--input-border-color);
   border-radius: var(--input-radius);
   background-color: var(--input-background-color);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   display: flex;
   align-items: center;
 }
 
 .listen-state {
-  width: 66px;
+  width: 54px;
   height: 28px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-muted);
@@ -1680,7 +1690,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -1708,6 +1718,10 @@ export default {
 }
 
 .vision-panel {
+  position: absolute;
+  top: 100px;
+  left: 86px;
+  width: 220px;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1719,12 +1733,12 @@ export default {
 
 .frame-meta {
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .vision-box {
   position: relative;
-  height: 96px;
+  height: 118px;
   padding: 12px;
   box-sizing: border-box;
   overflow: hidden;
@@ -1773,7 +1787,7 @@ export default {
   position: relative;
   z-index: 1;
   color: var(--color-text-primary);
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 800;
   line-height: 1.15;
 }
@@ -1787,31 +1801,42 @@ export default {
 }
 
 .landmark-row {
+  position: absolute;
+  left: 10px;
+  bottom: 70px;
+  width: 218px;
+  height: 58px;
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 4px;
+  overflow: hidden;
 }
 
 .chips {
-  flex-grow: 1;
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 
 .chip {
-  padding: 3px 6px;
+  padding: 3px 5px;
   border: var(--border-width-thin) solid var(--border-color-muted);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   background-color: var(--color-background);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.1;
 }
 
 .guidance {
-  min-height: 40px;
-  padding: 5px 9px;
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  width: 290px;
+  height: 52px;
+  padding: 5px 8px;
   box-sizing: border-box;
   border: var(--border-width-default) solid var(--border-color-accent);
   border-radius: var(--radius-md);
@@ -1823,15 +1848,20 @@ export default {
 
 .action {
   color: var(--color-text-primary);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1.25;
 }
 
 .metrics {
+  position: absolute;
+  top: 43px;
+  right: 10px;
+  width: 146px;
+  height: 54px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 5px;
 }
 
 .metric {
@@ -1843,7 +1873,7 @@ export default {
 .metric-head {
   justify-content: space-between;
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .bar {
@@ -1867,13 +1897,17 @@ export default {
 }
 
 .trace-row {
+  position: absolute;
+  top: 214px;
+  right: 10px;
+  width: 146px;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
 }
 
 .step {
-  height: 24px;
+  height: 25px;
   padding: 3px 5px;
   box-sizing: border-box;
   border: var(--border-width-thin) solid var(--border-color-muted);
@@ -1903,7 +1937,11 @@ export default {
 }
 
 .voice-panel {
-  min-height: 28px;
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 150px;
+  height: 52px;
   padding: 4px 8px;
   box-sizing: border-box;
   border: var(--border-width-thin) solid var(--border-color-muted);
@@ -1917,14 +1955,14 @@ export default {
 
 .voice-command {
   color: var(--color-text-primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   line-height: 1.1;
 }
 
 .voice-hint {
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.1;
 }
 
@@ -1955,6 +1993,9 @@ export default {
 }
 
 .error {
-  margin-top: 0;
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 132px;
 }
 </style>
