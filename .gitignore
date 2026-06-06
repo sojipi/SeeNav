@@ -1,1 +1,4 @@
 seenav-backend/
+.agents/
+skills-lock.json
+*.jpg

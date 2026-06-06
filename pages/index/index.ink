@@ -145,10 +145,24 @@ export default {
     mapMimeType: "",
     mapSize: 0,
     mapCapturedAt: 0,
+    mapIMU: null,
     autoCaptureMs: 10000,
     modelStatus: "Railway 后端",
     sessionId: "",
-    apiBase: DEFAULT_API_BASE
+    apiBase: DEFAULT_API_BASE,
+    imuData: {
+      accelerometer: { x: null, y: null, z: null, timestamp: 0, hasReading: false },
+      gyroscope: { x: null, y: null, z: null, timestamp: 0, hasReading: false },
+      orientation: {
+        quaternion: null,
+        euler: { yawDegrees: null, pitchDegrees: null, rollDegrees: null },
+        timestamp: 0,
+        hasReading: false
+      },
+      timestamp: 0,
+      startedAt: 0
+    },
+    imuListening: false
   },
 
   onLoad(options = {}) {
@@ -168,14 +182,21 @@ export default {
     }
     console.log("SeeNav apiBase:", this.data.apiBase || "local-demo", "session:", this.data.sessionId);
     this.checkLanguageModel();
+    this.startIMUListeners();
+  },
+
+  onShow() {
+    this.startIMUListeners();
   },
 
   onHide() {
     this.stopNavigationLoop("页面已隐藏，自动校准已停止。");
+    this.stopIMUListeners();
   },
 
   onUnload() {
     this.stopNavigationLoop("页面已关闭，自动校准已停止。");
+    this.stopIMUListeners();
   },
 
   onDestinationInput(event) {
@@ -321,6 +342,9 @@ export default {
     });
 
     const photoMeta = await this.capturePhotoMeta();
+    if (photoMeta) {
+      photoMeta.imu = this.captureIMUSnapshot();
+    }
     const result = await this.resolveNavigation(photoMeta);
 
     this.applyNavigationFrame(result, photoMeta);
@@ -354,11 +378,13 @@ export default {
       return;
     }
 
+    const mapIMU = this.captureIMUSnapshot();
     this.setData({
       mapImageBase64: mapMeta.imageBase64,
       mapMimeType: mapMeta.mimeType,
       mapSize: mapMeta.size,
-      mapCapturedAt: Date.now(),
+      mapCapturedAt: mapMeta.capturedAt || Date.now(),
+      mapIMU,
       cameraImageSrc: mapMeta.imageSrc,
       hasCameraFrame: true,
       navigationPhase: "navigating",
@@ -386,6 +412,7 @@ export default {
       }
 
       const photo = await camera.takePhoto({ quality: "high" });
+      const capturedAt = Date.now();
       const size = photo && photo.data ? photo.data.byteLength : 0;
       const imageBase64 = photo && photo.data ? wx.arrayBufferToBase64(photo.data) : "";
       const mimeType = photo && photo.mimeType ? photo.mimeType : "image/jpeg";
@@ -397,6 +424,7 @@ export default {
       return {
         mimeType,
         size,
+        capturedAt,
         imageBase64,
         imageSrc: imageBase64 ? "data:" + mimeType + ";base64," + imageBase64 : ""
       };
@@ -425,6 +453,7 @@ export default {
   },
 
   requestBackend(photoMeta) {
+    const frameIMU = photoMeta && photoMeta.imu ? photoMeta.imu : this.captureIMUSnapshot();
     return new Promise((resolve, reject) => {
       const apiBase = (this.data.apiBase || "").replace(/\/+$/, "");
       const url = apiBase + "/api/visual-nav/locate";
@@ -442,14 +471,19 @@ export default {
           imageBase64: photoMeta && photoMeta.imageBase64 ? photoMeta.imageBase64 : "",
           mimeType: photoMeta && photoMeta.mimeType ? photoMeta.mimeType : "image/jpeg",
           size: photoMeta && photoMeta.size ? photoMeta.size : 0,
+          capturedAt: photoMeta && photoMeta.capturedAt ? photoMeta.capturedAt : Date.now(),
           mapBase64: this.data.mapImageBase64,
           mapMimeType: this.data.mapMimeType || "image/jpeg",
           mapSize: this.data.mapSize,
           mapCapturedAt: this.data.mapCapturedAt,
+          mapIMU: this.data.mapIMU,
+          imu: frameIMU,
+          imuListening: this.data.imuListening,
           routeContext: {
             phase: this.data.navigationPhase,
             startSource: "parking_map",
-            visualFocus: "parking_area_color"
+            visualFocus: "parking_area_color",
+            orientationReference: "map_capture_imu"
           },
           scenario: "parking"
         },
@@ -608,6 +642,7 @@ export default {
       mapMimeType: "",
       mapSize: 0,
       mapCapturedAt: 0,
+      mapIMU: null,
       voiceCommand: "等待语音命令",
       voiceHint: "说 leqi 后接：带我去 L104、开始导航、停止导航、重置",
       errorText: ""
@@ -847,7 +882,11 @@ export default {
       voiceHint: "导航中：10 秒后自动拍照校准"
     });
     this.autoScanTimer = setTimeout(() => {
-      if (!this.data.navigationActive || this.data.isScanning) {
+      if (!this.data.navigationActive) {
+        return;
+      }
+      if (this.data.isScanning) {
+        this.scheduleNextAutoScan();
         return;
       }
       this.onScanTap({ source: "auto" });
@@ -952,6 +991,215 @@ export default {
     } catch (error) {
       console.log("LanguageModel unavailable", error);
     }
+  },
+
+  startIMUListeners() {
+    if (this.data.imuListening || (this.imuSensors && this.imuSensors.length > 0)) {
+      return;
+    }
+
+    const sensors = [];
+    const startedAt = Date.now();
+    const startSensor = (label, SensorCtor, onReading) => {
+      if (typeof SensorCtor !== "function") {
+        return;
+      }
+      try {
+        const sensor = new SensorCtor({ frequency: 15 });
+        sensor.addEventListener("reading", (event) => {
+          onReading(sensor, event || {});
+        });
+        sensor.addEventListener("error", (event) => {
+          console.log("SeeNav " + label + " sensor error:", event && (event.message || event.error || event));
+        });
+        sensor.start();
+        sensors.push(sensor);
+      } catch (error) {
+        console.log("SeeNav " + label + " unavailable:", error);
+      }
+    };
+
+    const AccelerometerCtor = typeof Accelerometer !== "undefined" ? Accelerometer : null;
+    const GyroscopeCtor = typeof Gyroscope !== "undefined" ? Gyroscope : null;
+    const OrientationCtor = typeof AbsoluteOrientationSensor !== "undefined" ? AbsoluteOrientationSensor : null;
+
+    startSensor("accelerometer", AccelerometerCtor, (sensor, event) => {
+      this.setData({
+        "imuData.accelerometer": this.sensorVectorReading(sensor, event),
+        "imuData.timestamp": Date.now()
+      });
+    });
+
+    startSensor("gyroscope", GyroscopeCtor, (sensor, event) => {
+      this.setData({
+        "imuData.gyroscope": this.sensorVectorReading(sensor, event),
+        "imuData.timestamp": Date.now()
+      });
+    });
+
+    startSensor("orientation", OrientationCtor, (sensor, event) => {
+      const quaternion = this.normalizeQuaternion(sensor.quaternion || event.quaternion || [event.x, event.y, event.z, event.w]);
+      if (!quaternion) {
+        return;
+      }
+      this.setData({
+        "imuData.orientation": {
+          quaternion,
+          euler: this.quaternionToEuler(quaternion),
+          timestamp: this.pickSensorTimestamp(sensor, event),
+          hasReading: true
+        },
+        "imuData.timestamp": Date.now()
+      });
+    });
+
+    this.imuSensors = sensors;
+    this.setData({
+      imuListening: sensors.length > 0,
+      "imuData.startedAt": startedAt
+    });
+    console.log("SeeNav IMU listeners started:", sensors.length);
+  },
+
+  stopIMUListeners() {
+    const sensors = this.imuSensors || [];
+    for (let i = 0; i < sensors.length; i += 1) {
+      try {
+        sensors[i].stop();
+      } catch (error) {
+        console.log("SeeNav IMU stop failed:", error);
+      }
+    }
+    this.imuSensors = [];
+    this.setData({ imuListening: false });
+    console.log("SeeNav IMU listeners stopped");
+  },
+
+  captureIMUSnapshot() {
+    const imu = this.data.imuData || {};
+    const orientation = imu.orientation || {};
+    const euler = orientation.euler || {};
+    const headingDegrees = typeof euler.yawDegrees === "number" ? euler.yawDegrees : null;
+    const snapshot = {
+      accelerometer: this.cloneIMUReading(imu.accelerometer),
+      gyroscope: this.cloneIMUReading(imu.gyroscope),
+      orientation: {
+        quaternion: orientation.quaternion ? orientation.quaternion.slice(0, 4) : null,
+        euler: {
+          yawDegrees: headingDegrees,
+          pitchDegrees: typeof euler.pitchDegrees === "number" ? euler.pitchDegrees : null,
+          rollDegrees: typeof euler.rollDegrees === "number" ? euler.rollDegrees : null
+        },
+        timestamp: orientation.timestamp || 0,
+        hasReading: Boolean(orientation.hasReading)
+      },
+      headingDegrees,
+      timestamp: Date.now()
+    };
+    snapshot.hasReading = Boolean(
+      (snapshot.accelerometer && snapshot.accelerometer.hasReading) ||
+      (snapshot.gyroscope && snapshot.gyroscope.hasReading) ||
+      snapshot.orientation.hasReading
+    );
+
+    const mapIMU = this.data.mapIMU;
+    if (
+      mapIMU &&
+      typeof snapshot.headingDegrees === "number" &&
+      typeof mapIMU.headingDegrees === "number"
+    ) {
+      snapshot.mapRelativeYawDegrees = this.normalizeSignedDegrees(snapshot.headingDegrees - mapIMU.headingDegrees);
+    }
+    return snapshot;
+  },
+
+  sensorVectorReading(sensor, event) {
+    return {
+      x: this.finiteNumber(event.x, sensor.x),
+      y: this.finiteNumber(event.y, sensor.y),
+      z: this.finiteNumber(event.z, sensor.z),
+      timestamp: this.pickSensorTimestamp(sensor, event),
+      hasReading: true
+    };
+  },
+
+  cloneIMUReading(reading) {
+    if (!reading || !reading.hasReading) {
+      return { x: null, y: null, z: null, timestamp: 0, hasReading: false };
+    }
+    return {
+      x: this.finiteNumber(reading.x, null),
+      y: this.finiteNumber(reading.y, null),
+      z: this.finiteNumber(reading.z, null),
+      timestamp: reading.timestamp || 0,
+      hasReading: true
+    };
+  },
+
+  pickSensorTimestamp(sensor, event) {
+    return this.finiteNumber(event.timestamp, sensor.timestamp) || Date.now();
+  },
+
+  finiteNumber(primary, fallback) {
+    if (typeof primary === "number" && isFinite(primary)) {
+      return primary;
+    }
+    if (typeof fallback === "number" && isFinite(fallback)) {
+      return fallback;
+    }
+    return null;
+  },
+
+  normalizeQuaternion(value) {
+    if (!value || value.length < 4) {
+      return null;
+    }
+    const x = this.finiteNumber(value[0], null);
+    const y = this.finiteNumber(value[1], null);
+    const z = this.finiteNumber(value[2], null);
+    const w = this.finiteNumber(value[3], null);
+    if (x === null || y === null || z === null || w === null) {
+      return null;
+    }
+    return [x, y, z, w];
+  },
+
+  quaternionToEuler(quaternion) {
+    const x = quaternion[0];
+    const y = quaternion[1];
+    const z = quaternion[2];
+    const w = quaternion[3];
+    const roll = Math.atan2(
+      2 * (w * x + y * z),
+      1 - 2 * (x * x + y * y)
+    );
+    const pitchInput = Math.max(-1, Math.min(1, 2 * (w * y - z * x)));
+    const pitch = Math.asin(pitchInput);
+    const yaw = Math.atan2(
+      2 * (w * z + x * y),
+      1 - 2 * (y * y + z * z)
+    );
+    return {
+      yawDegrees: this.normalizeDegrees(yaw * 180 / Math.PI),
+      pitchDegrees: pitch * 180 / Math.PI,
+      rollDegrees: roll * 180 / Math.PI
+    };
+  },
+
+  normalizeDegrees(value) {
+    let normalized = value % 360;
+    if (normalized < 0) {
+      normalized += 360;
+    }
+    return normalized;
+  },
+
+  normalizeSignedDegrees(value) {
+    let normalized = this.normalizeDegrees(value);
+    if (normalized > 180) {
+      normalized -= 360;
+    }
+    return normalized;
   },
 
   toLandmarks(labels) {

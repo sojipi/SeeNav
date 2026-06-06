@@ -14,5 +14,6 @@
   - camera
   - microphone
   - audio
+  - device-sensors
 - **Skills**:
   - aiui-dev
