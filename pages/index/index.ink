@@ -504,7 +504,7 @@ export default {
     return new Promise((resolve, reject) => {
       const apiBase = (this.data.apiBase || "").replace(/\/+$/, "");
       const url = apiBase + "/api/visual-nav/locate";
-      const requestTimeoutMs = frameSource === "parking_map" ? 12000 : 10000;
+      const requestTimeoutMs = frameSource === "parking_map" ? 40000 : 25000;
       let settled = false;
       let requestTask = null;
       const settle = (callback, value) => {
@@ -537,15 +537,15 @@ export default {
         data: {
           destination: this.data.destination,
           sessionId: this.data.sessionId,
-          imageBase64: photoMeta && photoMeta.imageBase64 ? photoMeta.imageBase64 : "",
+          imageBase64: frameSource === "parking_map" ? "" : (photoMeta && photoMeta.imageBase64 ? photoMeta.imageBase64 : ""),
           mimeType: photoMeta && photoMeta.mimeType ? photoMeta.mimeType : "image/jpeg",
-          size: photoMeta && photoMeta.size ? photoMeta.size : 0,
+          size: frameSource === "parking_map" ? 0 : (photoMeta && photoMeta.size ? photoMeta.size : 0),
           capturedAt: photoMeta && photoMeta.capturedAt ? photoMeta.capturedAt : Date.now(),
           frameSource,
-          mapBase64: this.data.mapImageBase64,
+          mapBase64: frameSource === "parking_map" ? this.data.mapImageBase64 : "",
           mapMimeType: this.data.mapMimeType || "image/jpeg",
-          mapSize: this.data.mapSize,
-          mapCapturedAt: this.data.mapCapturedAt,
+          mapSize: frameSource === "parking_map" ? this.data.mapSize : 0,
+          mapCapturedAt: frameSource === "parking_map" ? this.data.mapCapturedAt : 0,
           mapIMU: this.data.mapIMU,
           imu: frameIMU,
           imuListening: this.data.imuListening,
