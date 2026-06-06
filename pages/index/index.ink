@@ -21,6 +21,12 @@
         </view>
       </view>
 
+      <view class="analysis-flow">
+        <view class="{{ item.className }}" ink:for="{{ analysisFlow }}" ink:key="id">
+          <text>{{ item.label }}</text>
+        </view>
+      </view>
+
       <view class="landmark-row">
         <text class="mini-label">识别地标</text>
         <view class="chips">
@@ -99,6 +105,12 @@ export default {
     nextAction: "说开始导航后，先告诉我目标车位。",
     confidence: 0,
     progress: 0,
+    analysisFlow: [
+      { id: "vision", label: "视觉识别", className: "analysis-step" },
+      { id: "graph", label: "智能建图", className: "analysis-step" },
+      { id: "imu", label: "IMU判断", className: "analysis-step" },
+      { id: "guide", label: "地标指引", className: "analysis-step" }
+    ],
     steps: [
       { id: "1", label: "定位", className: "step" },
       { id: "2", label: "直行", className: "step" },
@@ -322,6 +334,7 @@ export default {
     this.setData({
       isScanning: true,
       scanButtonText: "分析中",
+      analysisFlow: this.toAnalysisFlow("imu"),
       voiceHint: options.source === "auto"
         ? "自动校准中：正在拍照判断位置和方向"
         : "正在拍照判断位置和方向",
@@ -358,6 +371,7 @@ export default {
     this.setData({
       isScanning: true,
       scanButtonText: "读取地图",
+      analysisFlow: this.toAnalysisFlow("vision"),
       frameMeta: "等待停车场地图",
       currentPlace: "正在读取地图当前位置",
       orientation: "请让地图完整进入眼镜视野",
@@ -402,6 +416,7 @@ export default {
       isScanning: true,
       routeState: "后端建图中",
       routeClass: "route-state route-warn",
+      analysisFlow: this.toAnalysisFlow("graph"),
       frameMeta: "停车场地图 · " + Math.round(mapMeta.size / 1024) + "KB",
       currentPlace: "等待后端识别地图当前位置",
       orientation: "正在结合地图、目标和 IMU 方位建图",
@@ -470,6 +485,7 @@ export default {
       frame.orientation = "已根据地图当前位置建立路线";
       frame.nextAction = "已根据地图当前位置开始导航，沿地图路线前进并在 10 秒后自动校准视野。";
       frame.scanButtonText = "继续校准";
+      frame.analysisFlow = this.toAnalysisFlow("guide");
     }
     return frame;
   },
@@ -488,7 +504,7 @@ export default {
     return new Promise((resolve, reject) => {
       const apiBase = (this.data.apiBase || "").replace(/\/+$/, "");
       const url = apiBase + "/api/visual-nav/locate";
-      const requestTimeoutMs = frameSource === "parking_map" ? 45000 : 35000;
+      const requestTimeoutMs = frameSource === "parking_map" ? 12000 : 10000;
       let settled = false;
       let requestTask = null;
       const settle = (callback, value) => {
@@ -659,6 +675,7 @@ export default {
       nextAction: frame.nextAction,
       confidence: frame.confidence,
       progress: frame.progress,
+      analysisFlow: this.toAnalysisFlow("guide", frame.analysisFlow),
       steps: this.toSteps(frame.activeStep),
       scanButtonText: frame.scanButtonText,
       cameraImageSrc: photoMeta && photoMeta.imageSrc ? photoMeta.imageSrc : this.data.cameraImageSrc,
@@ -698,6 +715,7 @@ export default {
       nextAction: "说开始导航后，先告诉我目标车位。",
       confidence: 0,
       progress: 0,
+      analysisFlow: this.toAnalysisFlow("idle"),
       steps: this.toSteps(0),
       scanButtonText: "拍照定位",
       frameIndex: 0,
@@ -800,6 +818,7 @@ export default {
         navigationPhase: "idle",
         routeState: "已停止",
         routeClass: "route-state",
+        analysisFlow: this.toAnalysisFlow("idle"),
         scanButtonText: "拍照定位",
         nextAction: "导航已停止。说开始导航可以重新开始。",
         voiceCommand: "听到：" + command,
@@ -864,6 +883,7 @@ export default {
       currentPlace: "等待目标车位",
       orientation: "请说目标车位，例如 L104",
       nextAction: "请告诉我目标车位。",
+      analysisFlow: this.toAnalysisFlow("idle"),
       scanButtonText: "等待目标",
       voiceHint: "请说目标车位，例如 L104。",
       errorText: ""
@@ -892,6 +912,7 @@ export default {
       orientation: "地图需要包含当前位置和分区颜色",
       landmarks: this.toLandmarks(["目标 " + target, "停车场地图", "当前位置", "分区颜色"]),
       nextAction: "请提供停车场地图，地图里需要包含当前位置和停车区域颜色。",
+      analysisFlow: this.toAnalysisFlow("idle"),
       scanButtonText: "拍地图",
       voiceHint: "请把停车场地图放到镜头前，然后说地图好了或拍地图。",
       errorText: ""
@@ -907,6 +928,7 @@ export default {
       currentPlace: "等待地图当前位置",
       orientation: "请提供包含当前位置和分区颜色的停车场地图",
       nextAction: "请把停车场地图放到镜头前，然后说地图好了或拍地图。",
+      analysisFlow: this.toAnalysisFlow("idle"),
       scanButtonText: "拍地图",
       voiceHint: "请说地图好了，或把地图对准镜头后说拍地图。"
     });
@@ -1404,6 +1426,38 @@ export default {
     return normalized;
   },
 
+  toAnalysisFlow(activeId, backendFlow) {
+    const fallback = [
+      { id: "vision", label: "视觉识别" },
+      { id: "graph", label: "智能建图" },
+      { id: "imu", label: "IMU判断" },
+      { id: "guide", label: "地标指引" }
+    ];
+    const incoming = Array.isArray(backendFlow) && backendFlow.length ? backendFlow : fallback;
+    const order = ["vision", "graph", "imu", "guide"];
+    const activeIndex = order.indexOf(activeId);
+    const result = [];
+    for (let i = 0; i < fallback.length; i += 1) {
+      const base = fallback[i];
+      const item = incoming.find ? incoming.find((entry) => entry && entry.id === base.id) : null;
+      const status = item && item.status ? item.status : "";
+      let className = "analysis-step";
+      if (status === "active" || base.id === activeId) {
+        className += " analysis-active";
+      } else if (status === "done" || (activeIndex >= 0 && i < activeIndex)) {
+        className += " analysis-done";
+      } else if (status === "waiting") {
+        className += " analysis-waiting";
+      }
+      result.push({
+        id: base.id,
+        label: item && item.label ? item.label : base.label,
+        className
+      });
+    }
+    return result;
+  },
+
   toLandmarks(labels) {
     const landmarks = [];
     for (let i = 0; i < labels.length; i += 1) {
@@ -1789,6 +1843,49 @@ export default {
 
 .progress-fill {
   background-color: var(--color-secondary);
+}
+
+.analysis-flow {
+  position: absolute;
+  top: 104px;
+  right: 10px;
+  width: 146px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.analysis-step {
+  height: 26px;
+  padding: 3px 4px;
+  box-sizing: border-box;
+  border: var(--border-width-thin) solid var(--border-color-muted);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  background-color: var(--color-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.analysis-done {
+  border-color: var(--border-color-success);
+  color: var(--color-text-primary);
+  background-color: var(--color-primary-40);
+}
+
+.analysis-active {
+  border-color: var(--border-color-accent);
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-highlight);
+}
+
+.analysis-waiting {
+  color: var(--color-text-secondary);
 }
 
 .trace-row {
